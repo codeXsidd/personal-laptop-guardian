@@ -4,8 +4,8 @@
 
 The backend exposes two categories of API:
 
-1. **Supabase PostgREST** — Standard REST endpoints auto-generated from PostgreSQL tables. Used by the mobile app with JWT auth.
-2. **Supabase Edge Functions** — Custom TypeScript endpoints for operations that need validation logic, external calls (FCM), or device API key auth. Used by both the agent and the mobile app.
+1. **Supabase PostgREST** -- Standard REST endpoints auto-generated from PostgreSQL tables. Used by the mobile app with JWT auth.
+2. **Supabase Edge Functions** -- Custom TypeScript (Deno) endpoints for operations that need validation logic, external calls, or device API key auth. Used by both the agent and the mobile app.
 
 All endpoints require HTTPS. Base URL: `https://<project>.supabase.co`
 
@@ -23,22 +23,91 @@ apikey: <supabase_anon_key>
 ### Windows Agent (Device API Key)
 Agent requests use a custom header instead of JWT:
 ```
-apikey: <supabase_anon_key>
 x-device-api-key: <device_api_key>
+Content-Type: application/json
 ```
-Edge functions validate this key against `devices.api_key_hash`.
+Edge functions validate this key by computing `SHA-256(api_key)` and matching against `devices.api_key_hash`.
 
 ---
 
-## Edge Functions (Agent → Backend)
+## Edge Functions (Agent -> Backend)
 
-### POST /functions/v1/ingest-events
+### POST /functions/v1/register-device
 
-Batch upload events from the agent. Idempotent — duplicate event IDs are silently ignored.
+First step of device pairing. Agent calls this to register itself and get a pairing code. No auth required (the device doesn't have credentials yet).
+
+**Request Body:**
+```json
+{
+  "machine_name": "DESKTOP-ABC123",
+  "os_version": "Windows 11 Home 10.0.26200",
+  "agent_version": "1.0.0"
+}
+```
+
+**Response (200):**
+```json
+{
+  "device_id": "uuid",
+  "pairing_code": "A7X3K9",
+  "expires_at": "2026-09-20T10:25:00.000Z",
+  "api_key": "lg_dk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+}
+```
+
+The agent must store `device_id` and `api_key` locally. The `api_key` is only returned once; the server stores only its SHA-256 hash.
+
+**Errors:**
+- 400: `machine_name` missing or invalid
+- 405: Wrong HTTP method
+- 500: Internal error
+
+---
+
+### POST /functions/v1/pair-device
+
+Mobile app calls this to claim a pairing code and link the device to the user's account.
 
 **Headers:**
 ```
-apikey: <supabase_anon_key>
+Authorization: Bearer <jwt_token>
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "pairing_code": "A7X3K9",
+  "device_name": "My Work Laptop"
+}
+```
+
+**Response (200):**
+```json
+{
+  "device_id": "uuid",
+  "device_name": "My Work Laptop",
+  "machine_name": "DESKTOP-ABC123",
+  "status": "online",
+  "os_version": "Windows 11 Home 10.0.26200",
+  "agent_version": "1.0.0"
+}
+```
+
+**Errors:**
+- 400: Invalid or expired pairing code, missing fields
+- 401: Not authenticated (no JWT)
+- 405: Wrong HTTP method
+- 409: Device already paired
+
+---
+
+### POST /functions/v1/ingest-events
+
+Batch upload events from the agent. Idempotent -- duplicate event IDs are silently ignored via `ON CONFLICT DO NOTHING`.
+
+**Headers:**
+```
 x-device-api-key: <device_api_key>
 Content-Type: application/json
 ```
@@ -62,6 +131,10 @@ Content-Type: application/json
 }
 ```
 
+**Validation:**
+- `events` must be an array (max 100 items)
+- Each event must have a valid UUID `id`, non-empty `event_type`, valid `severity` (info/low/medium/high/critical), and valid ISO 8601 `timestamp`
+
 **Response (200):**
 ```json
 {
@@ -71,29 +144,25 @@ Content-Type: application/json
 }
 ```
 
-**Response (401):**
-```json
-{ "error": "Invalid device API key" }
-```
-
-**Response (429):**
-```json
-{ "error": "Rate limit exceeded", "retry_after_seconds": 60 }
-```
-
-**Limits:**
-- Maximum 100 events per batch
-- Maximum 10 requests per minute per device
+**Errors:**
+- 400: Validation error (details in `error` field), batch too large
+- 401: Missing or invalid API key
+- 405: Wrong HTTP method
+- 500: Database error
 
 ---
 
 ### POST /functions/v1/heartbeat
 
-Agent heartbeat with optional system metrics.
+Agent heartbeat with optional system metrics. Updates device status to online.
 
-**Headers:** Same as ingest-events.
+**Headers:**
+```
+x-device-api-key: <device_api_key>
+Content-Type: application/json
+```
 
-**Request Body:**
+**Request Body (all fields optional):**
 ```json
 {
   "cpu_percent": 12.5,
@@ -114,107 +183,14 @@ Agent heartbeat with optional system metrics.
 }
 ```
 
----
-
-### POST /functions/v1/register-device
-
-First step of device pairing. Agent calls this to register itself and get a pairing code.
-
-**Headers:**
-```
-apikey: <supabase_anon_key>
-Content-Type: application/json
-```
-
-**Request Body:**
-```json
-{
-  "machine_name": "DESKTOP-ABC123",
-  "os_version": "Windows 11 Home 10.0.26200",
-  "agent_version": "1.0.0"
-}
-```
-
-**Response (200):**
-```json
-{
-  "device_id": "uuid",
-  "pairing_code": "A7X3K9",
-  "expires_at": "2026-09-20T10:25:00.000Z",
-  "api_key": "lg_dk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-}
-```
-
-The agent must store `device_id` and `api_key` locally. The `api_key` is only returned once; the server stores only its bcrypt hash.
+**Errors:**
+- 401: Missing or invalid API key
+- 405: Wrong HTTP method
+- 500: Database error
 
 ---
 
-### POST /functions/v1/pair-device
-
-Mobile app calls this to claim a pairing code and link the device to the user.
-
-**Headers:**
-```
-Authorization: Bearer <jwt_token>
-apikey: <supabase_anon_key>
-Content-Type: application/json
-```
-
-**Request Body:**
-```json
-{
-  "pairing_code": "A7X3K9",
-  "device_name": "My Work Laptop"
-}
-```
-
-**Response (200):**
-```json
-{
-  "device_id": "uuid",
-  "device_name": "My Work Laptop",
-  "machine_name": "DESKTOP-ABC123",
-  "status": "online"
-}
-```
-
-**Response (400):**
-```json
-{ "error": "Invalid or expired pairing code" }
-```
-
-**Response (409):**
-```json
-{ "error": "Device already paired" }
-```
-
----
-
-### POST /functions/v1/send-notification
-
-Internal function called by database triggers or other edge functions when a high-severity event is ingested. Not called directly by the agent or mobile app.
-
-**Request Body (internal):**
-```json
-{
-  "user_id": "uuid",
-  "device_id": "uuid",
-  "event_type": "login_failed",
-  "severity": "high",
-  "title": "Failed Login Attempt",
-  "body": "3 failed login attempts on My Work Laptop",
-  "data": {
-    "device_id": "uuid",
-    "event_type": "login_failed"
-  }
-}
-```
-
-Sends an FCM push notification to the user's registered `fcm_token`.
-
----
-
-## PostgREST Endpoints (Mobile App → Backend)
+## PostgREST Endpoints (Mobile App -> Backend)
 
 These are auto-generated by Supabase and protected by RLS. The mobile app uses the Supabase Dart client which abstracts these.
 
@@ -237,26 +213,26 @@ Update device name.
 { "device_name": "New Name" }
 ```
 
-### GET /rest/v1/events
+### GET /rest/v1/activity_events
 
 Query events for the user's devices. RLS automatically scopes to the user's devices.
 
 **Common filters:**
 ```
 # All events for a device, newest first
-GET /rest/v1/events?device_id=eq.{id}&order=timestamp.desc&limit=50
+GET /rest/v1/activity_events?device_id=eq.{id}&order=timestamp.desc&limit=50
 
 # Filter by event type
-GET /rest/v1/events?device_id=eq.{id}&event_type=eq.session_login&order=timestamp.desc
+GET /rest/v1/activity_events?device_id=eq.{id}&event_type=eq.session_login&order=timestamp.desc
 
 # Filter by time range
-GET /rest/v1/events?device_id=eq.{id}&timestamp=gte.2026-09-01T00:00:00Z&timestamp=lt.2026-09-21T00:00:00Z
+GET /rest/v1/activity_events?device_id=eq.{id}&timestamp=gte.2026-09-01T00:00:00Z&timestamp=lt.2026-09-21T00:00:00Z
 
 # High severity only
-GET /rest/v1/events?device_id=eq.{id}&severity=in.(high,critical)&order=timestamp.desc
+GET /rest/v1/activity_events?device_id=eq.{id}&severity=in.(high,critical)&order=timestamp.desc
 
 # Paginated
-GET /rest/v1/events?device_id=eq.{id}&order=timestamp.desc&limit=20&offset=40
+GET /rest/v1/activity_events?device_id=eq.{id}&order=timestamp.desc&limit=20&offset=40
 ```
 
 ### GET /rest/v1/heartbeats
@@ -275,19 +251,19 @@ User's notification preferences.
 GET /rest/v1/notification_settings?device_id=eq.{id}
 ```
 
-### PUT /rest/v1/notification_settings
+### CRUD /rest/v1/notification_tokens
 
-Update notification preferences (upsert).
+Manage FCM push notification tokens.
 
 ---
 
 ## Supabase Realtime
 
-The mobile app subscribes to realtime changes for live updates:
+The mobile app can subscribe to realtime changes for live updates:
 
 ```dart
 supabase
-  .from('events')
+  .from('activity_events')
   .stream(primaryKey: ['id'])
   .eq('device_id', deviceId)
   .order('timestamp', ascending: false)
@@ -311,7 +287,7 @@ supabase
 | 400         | Bad request (validation error)   | Log and skip batch        |
 | 401         | Invalid API key or expired JWT   | Re-pair required          |
 | 404         | Device not found                 | Re-register               |
-| 409         | Conflict (already exists)        | Idempotent — safe to ignore |
-| 429         | Rate limited                     | Back off per retry_after  |
+| 405         | Method not allowed               | Fix client request        |
+| 409         | Conflict (already exists)        | Idempotent -- safe to ignore |
 | 500         | Server error                     | Retry with backoff        |
 | 503         | Service unavailable              | Retry with backoff        |

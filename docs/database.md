@@ -4,119 +4,150 @@
 
 The backend uses Supabase (PostgreSQL). The agent also uses a local SQLite database for offline-first storage. Both schemas are documented here.
 
+All migrations are in `backend/supabase/migrations/` and run in order. pgTAP tests are in `backend/supabase/tests/`.
+
 ---
 
 ## PostgreSQL (Supabase)
 
-All tables use `uuid` primary keys generated with `gen_random_uuid()`. Timestamps are `timestamptz` (UTC).
+All tables use `uuid` primary keys generated with `gen_random_uuid()`. Timestamps are `timestamptz` (UTC). Extensions: `pgcrypto` (SHA-256 hashing), `pgtap` (testing).
 
 ### profiles
 
-Extends Supabase Auth `auth.users`. Created via a trigger on user signup.
+Extends Supabase Auth `auth.users`. Created automatically via trigger on user signup.
 
-| Column       | Type                   | Constraints              | Description                      |
-|-------------|------------------------|--------------------------|----------------------------------|
-| id          | uuid                   | PK, references auth.users | User identity                   |
-| full_name   | text                   | NOT NULL                 | Display name                     |
-| email       | text                   | NOT NULL                 | Cached from auth.users           |
-| fcm_token   | text                   | NULLABLE                 | Firebase Cloud Messaging token   |
-| created_at  | timestamptz            | DEFAULT now()            | Profile creation time            |
-| updated_at  | timestamptz            | DEFAULT now()            | Last profile update              |
+| Column       | Type        | Constraints              | Description                      |
+|-------------|-------------|--------------------------|----------------------------------|
+| id          | uuid        | PK, references auth.users | User identity                   |
+| full_name   | text        | NOT NULL                 | Display name                     |
+| email       | text        | NOT NULL                 | Cached from auth.users           |
+| created_at  | timestamptz | DEFAULT now()            | Profile creation time            |
+| updated_at  | timestamptz | DEFAULT now()            | Last profile update (auto-trigger) |
 
 ### devices
 
-| Column          | Type                   | Constraints              | Description                              |
-|----------------|------------------------|--------------------------|------------------------------------------|
-| id             | uuid                   | PK, DEFAULT gen_random_uuid() | Device identity                    |
-| user_id        | uuid                   | FK → profiles(id), NOT NULL | Owning user                          |
-| device_name    | text                   | NOT NULL                 | User-assigned name ("My Work Laptop")    |
-| machine_name   | text                   | NOT NULL                 | Windows hostname                         |
-| os_version     | text                   |                          | Windows version string                   |
-| agent_version  | text                   |                          | Agent build version                      |
-| api_key_hash   | text                   | NOT NULL, UNIQUE         | bcrypt hash of device API key            |
-| status         | text                   | NOT NULL, DEFAULT 'offline' | online / offline / pairing            |
-| last_seen_at   | timestamptz            |                          | Last heartbeat timestamp                 |
-| heartbeat_interval_s | integer           | NOT NULL, DEFAULT 60     | Expected heartbeat interval              |
-| created_at     | timestamptz            | DEFAULT now()            | Registration time                        |
+Registered Windows laptops. `user_id` is null during pairing (before a user claims the device).
+
+| Column               | Type        | Constraints                        | Description                              |
+|----------------------|-------------|------------------------------------|------------------------------------------|
+| id                   | uuid        | PK, DEFAULT gen_random_uuid()      | Device identity                          |
+| user_id              | uuid        | FK -> profiles(id), NULLABLE       | Owning user (null until paired)          |
+| device_name          | text        | NULLABLE                           | User-assigned name ("My Work Laptop")    |
+| machine_name         | text        | NOT NULL                           | Windows hostname                         |
+| os_version           | text        | NULLABLE                           | Windows version string                   |
+| agent_version        | text        | NULLABLE                           | Agent build version                      |
+| api_key_hash         | text        | NOT NULL, UNIQUE                   | SHA-256 hex hash of device API key       |
+| status               | text        | NOT NULL, DEFAULT 'pairing', CHECK | pairing / online / offline               |
+| last_seen_at         | timestamptz | NULLABLE                           | Last heartbeat or event timestamp        |
+| heartbeat_interval_s | integer     | NOT NULL, DEFAULT 60, CHECK > 0    | Expected heartbeat interval (seconds)    |
+| created_at           | timestamptz | DEFAULT now()                      | Registration time                        |
+| updated_at           | timestamptz | DEFAULT now()                      | Auto-updated via trigger                 |
 
 **Indexes:**
-- `idx_devices_user_id` on `user_id`
-- `idx_devices_api_key_hash` on `api_key_hash` (unique)
+- `idx_devices_user_id` on `user_id` WHERE user_id IS NOT NULL
 - `idx_devices_status` on `status`
 
-### events
+### activity_events
 
-The core table. Receives batched inserts from the agent.
+Core event table. Receives batched inserts from the agent via the `ingest-events` edge function.
 
-| Column          | Type                   | Constraints              | Description                              |
-|----------------|------------------------|--------------------------|------------------------------------------|
-| id             | uuid                   | PK                       | Deterministic UUID from agent            |
-| device_id      | uuid                   | FK → devices(id), NOT NULL | Source device                          |
-| event_type     | text                   | NOT NULL                 | Enum-like (see Event Types below)        |
-| severity       | text                   | NOT NULL, DEFAULT 'info' | info / low / medium / high / critical    |
-| timestamp      | timestamptz            | NOT NULL                 | When the event occurred on the device    |
-| payload        | jsonb                  | NOT NULL, DEFAULT '{}'   | Event-type-specific structured data      |
-| synced_at      | timestamptz            | DEFAULT now()            | When the server received this event      |
+| Column     | Type        | Constraints                        | Description                              |
+|------------|-------------|------------------------------------|------------------------------------------|
+| id         | uuid        | PK (deterministic, from agent)     | Deterministic UUID generated by agent    |
+| device_id  | uuid        | FK -> devices(id) CASCADE, NOT NULL| Source device                            |
+| event_type | text        | NOT NULL                           | Event type string                        |
+| severity   | text        | NOT NULL, DEFAULT 'info', CHECK    | info / low / medium / high / critical    |
+| timestamp  | timestamptz | NOT NULL                           | When the event occurred on the device    |
+| payload    | jsonb       | NOT NULL, DEFAULT '{}'             | Event-specific structured data           |
+| synced_at  | timestamptz | NOT NULL, DEFAULT now()            | When the server received this event      |
 
 **Indexes:**
-- `idx_events_device_id_timestamp` on `(device_id, timestamp DESC)`
-- `idx_events_device_id_event_type` on `(device_id, event_type)`
-- `idx_events_timestamp` on `timestamp DESC`
-- Partial index: `idx_events_high_severity` on `(device_id, timestamp DESC) WHERE severity IN ('high', 'critical')`
+- `idx_activity_events_device_timestamp` on `(device_id, timestamp DESC)`
+- `idx_activity_events_device_type` on `(device_id, event_type)`
+- `idx_activity_events_timestamp` on `timestamp DESC`
+- `idx_activity_events_high_severity` on `(device_id, timestamp DESC)` WHERE severity IN ('high', 'critical')
 
-**Constraint:**
-- `UNIQUE (id)` — enables `ON CONFLICT (id) DO NOTHING` for idempotent inserts
+**Deduplication:**
+Primary key `id` enables `ON CONFLICT (id) DO NOTHING` for idempotent inserts.
 
 ### pairing_codes
 
-Short-lived codes for device-to-user pairing.
+Short-lived codes for device-to-user pairing. 6-character uppercase alphanumeric, 10-minute TTL.
 
-| Column          | Type                   | Constraints              | Description                              |
-|----------------|------------------------|--------------------------|------------------------------------------|
-| id             | uuid                   | PK, DEFAULT gen_random_uuid() | Internal ID                        |
-| code           | text                   | NOT NULL, UNIQUE         | 6-char alphanumeric code                 |
-| device_id      | uuid                   | FK → devices(id), NOT NULL | Device requesting pairing              |
-| expires_at     | timestamptz            | NOT NULL                 | Code expiration (created_at + 10 min)    |
-| claimed_by     | uuid                   | FK → profiles(id)        | User who claimed the code                |
-| claimed_at     | timestamptz            |                          | When the code was claimed                |
-| created_at     | timestamptz            | DEFAULT now()            |                                          |
+| Column     | Type        | Constraints                        | Description                              |
+|------------|-------------|------------------------------------|------------------------------------------|
+| id         | uuid        | PK, DEFAULT gen_random_uuid()      | Internal ID                              |
+| code       | text        | NOT NULL, UNIQUE                   | 6-char alphanumeric code                 |
+| device_id  | uuid        | FK -> devices(id) CASCADE, NOT NULL| Device requesting pairing                |
+| expires_at | timestamptz | NOT NULL                           | Code expiration (created_at + 10 min)    |
+| claimed_by | uuid        | FK -> profiles(id), NULLABLE       | User who claimed the code                |
+| claimed_at | timestamptz | NULLABLE                           | When the code was claimed                |
+| created_at | timestamptz | DEFAULT now()                      |                                          |
 
 ### heartbeats
 
-Lightweight table for tracking device liveness. Old records are periodically pruned.
+Lightweight liveness and metrics records. Old rows are periodically pruned via `cleanup_old_heartbeats()`.
 
-| Column          | Type                   | Constraints              | Description                              |
-|----------------|------------------------|--------------------------|------------------------------------------|
-| id             | uuid                   | PK, DEFAULT gen_random_uuid() |                                     |
-| device_id      | uuid                   | FK → devices(id), NOT NULL |                                        |
-| cpu_percent    | real                   |                          | CPU usage at heartbeat time              |
-| memory_percent | real                   |                          | Memory usage                             |
-| disk_percent   | real                   |                          | Primary disk usage                       |
-| battery_percent| real                   |                          | Battery level (null if no battery)       |
-| is_charging    | boolean                |                          | Charging state                           |
-| ip_address     | text                   |                          | Public or local IP                       |
-| created_at     | timestamptz            | DEFAULT now()            |                                          |
+| Column          | Type        | Constraints                        | Description                    |
+|-----------------|-------------|------------------------------------|--------------------------------|
+| id              | uuid        | PK, DEFAULT gen_random_uuid()      |                                |
+| device_id       | uuid        | FK -> devices(id) CASCADE, NOT NULL|                                |
+| cpu_percent     | real        | NULLABLE                           | CPU usage at heartbeat time    |
+| memory_percent  | real        | NULLABLE                           | Memory usage                   |
+| disk_percent    | real        | NULLABLE                           | Primary disk usage             |
+| battery_percent | real        | NULLABLE                           | Battery level                  |
+| is_charging     | boolean     | NULLABLE                           | Charging state                 |
+| ip_address      | text        | NULLABLE                           | Public or local IP             |
+| created_at      | timestamptz | DEFAULT now()                      |                                |
 
 **Indexes:**
-- `idx_heartbeats_device_id_created` on `(device_id, created_at DESC)`
+- `idx_heartbeats_device_created` on `(device_id, created_at DESC)`
+
+### notification_tokens
+
+FCM device tokens registered by the mobile app. A user may have multiple mobile devices.
+
+| Column       | Type        | Constraints                        | Description                    |
+|-------------|-------------|------------------------------------|--------------------------------|
+| id           | uuid        | PK, DEFAULT gen_random_uuid()      |                                |
+| user_id      | uuid        | FK -> profiles(id) CASCADE, NOT NULL|                               |
+| fcm_token    | text        | NOT NULL                           | Firebase Cloud Messaging token |
+| device_label | text        | NULLABLE                           | User-assigned label            |
+| created_at   | timestamptz | DEFAULT now()                      |                                |
+| updated_at   | timestamptz | DEFAULT now()                      | Auto-updated via trigger       |
+
+**Constraint:** UNIQUE (user_id, fcm_token)
 
 ### notification_settings
 
-Per-device notification preferences set by the user in the mobile app.
+Per-device, per-event-type notification preferences set by the user in the mobile app.
 
-| Column          | Type                   | Constraints              | Description                              |
-|----------------|------------------------|--------------------------|------------------------------------------|
-| id             | uuid                   | PK, DEFAULT gen_random_uuid() |                                     |
-| user_id        | uuid                   | FK → profiles(id), NOT NULL |                                       |
-| device_id      | uuid                   | FK → devices(id), NOT NULL |                                        |
-| event_type     | text                   | NOT NULL                 | Which event type this rule covers        |
-| min_severity   | text                   | NOT NULL, DEFAULT 'high' | Minimum severity to notify               |
-| enabled        | boolean                | NOT NULL, DEFAULT true   |                                          |
-| created_at     | timestamptz            | DEFAULT now()            |                                          |
-| updated_at     | timestamptz            | DEFAULT now()            |                                          |
+| Column       | Type        | Constraints                        | Description                    |
+|-------------|-------------|------------------------------------|--------------------------------|
+| id           | uuid        | PK, DEFAULT gen_random_uuid()      |                                |
+| user_id      | uuid        | FK -> profiles(id) CASCADE, NOT NULL|                               |
+| device_id    | uuid        | FK -> devices(id) CASCADE, NOT NULL|                               |
+| event_type   | text        | NOT NULL                           | Which event type this covers   |
+| min_severity | text        | NOT NULL, DEFAULT 'high', CHECK    | Minimum severity to notify     |
+| enabled      | boolean     | NOT NULL, DEFAULT true             |                                |
+| created_at   | timestamptz | DEFAULT now()                      |                                |
+| updated_at   | timestamptz | DEFAULT now()                      | Auto-updated via trigger       |
 
-**Constraint:**
-- `UNIQUE (user_id, device_id, event_type)`
+**Constraint:** UNIQUE (user_id, device_id, event_type)
+
+### admin_actions
+
+Audit log of administrative operations.
+
+| Column      | Type        | Constraints                        | Description                    |
+|-------------|-------------|------------------------------------|--------------------------------|
+| id          | uuid        | PK, DEFAULT gen_random_uuid()      |                                |
+| user_id     | uuid        | FK -> profiles(id), NULLABLE       | User who performed the action  |
+| device_id   | uuid        | FK -> devices(id), NULLABLE        | Affected device                |
+| action_type | text        | NOT NULL                           | e.g. device_registered, device_paired |
+| details     | jsonb       | NOT NULL, DEFAULT '{}'             | Action-specific data           |
+| ip_address  | text        | NULLABLE                           | Request source IP              |
+| created_at  | timestamptz | DEFAULT now()                      |                                |
 
 ---
 
@@ -124,6 +155,7 @@ Per-device notification preferences set by the user in the mobile app.
 
 | Event Type              | Severity Default | Payload Fields                                          |
 |------------------------|------------------|---------------------------------------------------------|
+| `agent_started`        | info             | `{ machine_name, agent_version }`                       |
 | `system_startup`       | info             | `{ boot_time }`                                         |
 | `system_shutdown`      | info             | `{ shutdown_reason }`                                   |
 | `session_login`        | info             | `{ username, session_type, is_remote }`                 |
@@ -144,23 +176,74 @@ Per-device notification preferences set by the user in the mobile app.
 
 ---
 
+## Database Functions
+
+### `get_device_by_api_key(p_api_key text) -> devices`
+Looks up a device by computing `SHA-256(p_api_key)` and matching against `devices.api_key_hash`. Returns the device row or null. Only returns devices where `status != 'pairing'` (device must be paired first). Used by edge functions for device authentication.
+
+### `user_owns_device(p_device_id uuid) -> boolean`
+Returns true if the current JWT user (`auth.uid()`) owns the given device. Used in RLS policies.
+
+### `generate_pairing_code() -> text`
+Generates a 6-character uppercase alphanumeric code. Characters: A-Z and 2-9 (excludes ambiguous 0, 1, I, O).
+
+### `mark_offline_devices() -> integer`
+Sets `status = 'offline'` for devices where `now() - last_seen_at > heartbeat_interval_s * 3`. Returns count of affected devices. Intended to be called on a schedule (pg_cron or Supabase cron).
+
+### `cleanup_old_heartbeats(p_retention_days integer DEFAULT 7) -> integer`
+Deletes heartbeat rows older than the retention period. Returns count of deleted rows. Called on a daily schedule.
+
+---
+
+## Row Level Security Policies
+
+All tables have RLS enabled. Agent operations (event ingestion, heartbeat, registration) go through edge functions using the service_role key, bypassing RLS.
+
+### profiles
+- `SELECT`: `auth.uid() = id`
+- `UPDATE`: `auth.uid() = id`
+
+### devices
+- `SELECT`: `user_id = auth.uid()`
+- `UPDATE`: `user_id = auth.uid()`
+
+### activity_events
+- `SELECT`: `device_id IN (SELECT id FROM devices WHERE user_id = auth.uid())`
+
+### pairing_codes
+- `SELECT`: `auth.uid() IS NOT NULL AND claimed_by IS NULL AND expires_at > now()`
+
+### heartbeats
+- `SELECT`: `device_id IN (SELECT id FROM devices WHERE user_id = auth.uid())`
+
+### notification_tokens
+- Full CRUD: `user_id = auth.uid()`
+
+### notification_settings
+- Full CRUD: `user_id = auth.uid()`
+
+### admin_actions
+- `SELECT`: `user_id = auth.uid()`
+
+---
+
 ## SQLite (Agent Local)
 
 ### events (local)
 
 Mirrors the server schema with sync metadata.
 
-| Column          | Type       | Description                              |
-|----------------|------------|------------------------------------------|
-| id             | TEXT (PK)  | Deterministic UUID                       |
-| event_type     | TEXT       | Same enum as server                      |
-| severity       | TEXT       | info / low / medium / high / critical    |
-| timestamp      | TEXT       | ISO 8601 UTC                             |
-| payload        | TEXT       | JSON string                              |
-| sync_status    | TEXT       | pending / synced / failed                |
-| retry_count    | INTEGER    | Number of sync attempts                  |
-| created_at     | TEXT       | ISO 8601 UTC                             |
-| synced_at      | TEXT       | ISO 8601 UTC (null until synced)         |
+| Column      | Type       | Description                              |
+|------------|------------|------------------------------------------|
+| id         | TEXT (PK)  | Deterministic UUID                       |
+| event_type | TEXT       | Same enum as server                      |
+| severity   | TEXT       | info / low / medium / high / critical    |
+| timestamp  | TEXT       | ISO 8601 UTC                             |
+| payload    | TEXT       | JSON string                              |
+| sync_status| TEXT       | pending / synced / failed                |
+| retry_count| INTEGER    | Number of sync attempts                  |
+| created_at | TEXT       | ISO 8601 UTC                             |
+| synced_at  | TEXT       | ISO 8601 UTC (null until synced)         |
 
 **Indexes:**
 - `idx_local_events_sync_status` on `sync_status`
@@ -168,59 +251,11 @@ Mirrors the server schema with sync metadata.
 
 ### device_identity (local)
 
-Single-row table persisting device registration state.
+Persisted as a JSON file at `%ProgramData%\LaptopGuardian\device-identity.json`.
 
-| Column          | Type       | Description                              |
-|----------------|------------|------------------------------------------|
-| device_id      | TEXT (PK)  | Device UUID                              |
-| api_key        | TEXT       | Plaintext API key (encrypted at rest via DPAPI) |
-| paired_at      | TEXT       | ISO 8601 UTC                             |
-| supabase_url   | TEXT       | Backend URL                              |
-
----
-
-## Row Level Security Policies
-
-### profiles
-- `SELECT`: `auth.uid() = id`
-- `UPDATE`: `auth.uid() = id`
-
-### devices
-- `SELECT`: `auth.uid() = user_id`
-- `INSERT`: via edge function only (pairing flow)
-- `UPDATE`: `auth.uid() = user_id` (limited columns: device_name, status)
-
-### events
-- `SELECT`: `device_id IN (SELECT id FROM devices WHERE user_id = auth.uid())`
-- `INSERT`: via edge function only (agent uses device API key, not user JWT)
-
-### heartbeats
-- `SELECT`: `device_id IN (SELECT id FROM devices WHERE user_id = auth.uid())`
-- `INSERT`: via edge function only
-
-### pairing_codes
-- `SELECT`: `auth.uid() IS NOT NULL` (any authenticated user can look up a code to claim it)
-- `UPDATE (claim)`: `auth.uid() IS NOT NULL AND claimed_by IS NULL AND expires_at > now()`
-- `INSERT`: via edge function only (agent initiates)
-
-### notification_settings
-- `SELECT`: `auth.uid() = user_id`
-- `INSERT`: `auth.uid() = user_id`
-- `UPDATE`: `auth.uid() = user_id`
-- `DELETE`: `auth.uid() = user_id`
-
----
-
-## Database Functions
-
-### `ingest_events(device_api_key text, events jsonb)`
-Server-side function called by the agent. Validates API key, performs `INSERT ... ON CONFLICT (id) DO NOTHING`, returns count of newly inserted events. Triggers notification check for high-severity events.
-
-### `update_device_heartbeat(device_api_key text, metrics jsonb)`
-Updates `devices.last_seen_at`, inserts a `heartbeats` row, sets `devices.status = 'online'`.
-
-### `mark_offline_devices()`
-Called on a schedule (pg_cron or edge function cron). Sets `status = 'offline'` for devices where `now() - last_seen_at > heartbeat_interval_s * 3`.
-
-### `cleanup_old_heartbeats(retention_days integer)`
-Deletes heartbeat rows older than retention period. Called on a daily schedule.
+| Field       | Type   | Description                              |
+|------------|--------|------------------------------------------|
+| device_id  | string | Device UUID                              |
+| api_key    | string | Plaintext API key (will use DPAPI in future) |
+| paired_at  | string | ISO 8601 UTC                             |
+| machine_name | string | Windows hostname                       |
