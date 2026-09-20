@@ -241,42 +241,49 @@ mobile/
 │   │   ├── device.dart
 │   │   ├── event.dart
 │   │   ├── event_type.dart
+│   │   ├── heartbeat.dart
 │   │   └── user_profile.dart
 │   │
 │   ├── services/
 │   │   ├── auth_service.dart
 │   │   ├── device_service.dart
 │   │   ├── event_service.dart
-│   │   ├── notification_service.dart
 │   │   └── pairing_service.dart
 │   │
 │   ├── providers/                       # Riverpod state management
 │   │   ├── auth_provider.dart
 │   │   ├── device_provider.dart
-│   │   └── event_provider.dart
+│   │   ├── event_provider.dart
+│   │   └── pairing_provider.dart
 │   │
 │   └── screens/
+│       ├── shell.dart                   # Bottom navigation
 │       ├── auth/
 │       │   ├── login_screen.dart
 │       │   └── register_screen.dart
 │       ├── pairing/
 │       │   └── pair_device_screen.dart
+│       ├── devices/
+│       │   └── devices_screen.dart
 │       ├── dashboard/
 │       │   └── dashboard_screen.dart
 │       ├── events/
 │       │   ├── event_list_screen.dart
+│       │   ├── event_detail_sheet.dart
 │       │   ├── login_history_screen.dart
 │       │   ├── process_history_screen.dart
 │       │   ├── usb_history_screen.dart
 │       │   ├── network_history_screen.dart
-│       │   └── file_audit_screen.dart
+│       │   ├── file_audit_screen.dart
+│       │   └── eventlog_screen.dart
+│       ├── reports/
+│       │   └── reports_screen.dart
 │       └── settings/
 │           └── settings_screen.dart
 │
 ├── test/
 ├── pubspec.yaml
-├── android/
-└── ios/                                 # Deferred
+└── android/
 ```
 
 ## Key Design Decisions

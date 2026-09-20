@@ -21,7 +21,7 @@ Windows Agent (C# .NET 10)  ->  Supabase (PostgreSQL + Edge Functions)  ->  Flut
 │   │   ├── migrations/   # 11 SQL migration files (schema, functions, RLS)
 │   │   └── tests/        # pgTAP database tests
 │   └── functions/        # 4 Edge Functions + shared utilities
-├── mobile/            # Flutter Android app — dashboard and notifications (planned)
+├── mobile/            # Flutter Android app — dashboard, event history, reports
 ├── docs/              # Architecture, API, database, security documentation
 └── scripts/           # Setup and utility scripts
 ```
@@ -53,7 +53,7 @@ Windows Agent (C# .NET 10)  ->  Supabase (PostgreSQL + Edge Functions)  ->  Flut
 cd windows-agent
 dotnet build LaptopGuardian.slnx
 
-# Run tests (165 tests)
+# Run tests (165 agent tests)
 dotnet test LaptopGuardian.slnx
 
 # Run the agent locally (console mode)
@@ -106,6 +106,51 @@ supabase functions serve
 - `notification_settings` -- per-device notification preferences
 - `admin_actions` -- audit log
 
+## Getting Started -- Mobile App
+
+```bash
+cd mobile
+
+# Install dependencies
+flutter pub get
+
+# Run tests (16 tests)
+flutter test
+
+# Static analysis
+flutter analyze
+
+# Build debug APK (requires Supabase credentials)
+flutter build apk --debug \
+  --dart-define=SUPABASE_URL=https://your-project.supabase.co \
+  --dart-define=SUPABASE_ANON_KEY=your-anon-key
+
+# Run on connected device
+flutter run \
+  --dart-define=SUPABASE_URL=https://your-project.supabase.co \
+  --dart-define=SUPABASE_ANON_KEY=your-anon-key
+```
+
+Supabase credentials are passed at build time via `--dart-define`. They are never committed to the repository.
+
+### Mobile App Screens
+
+| Screen | Description |
+|--------|-------------|
+| Login / Register | Supabase Auth email/password |
+| Devices | List of paired devices with status |
+| Pair Device | Enter 6-character pairing code |
+| Dashboard | Device status, metrics, recent events, quick actions |
+| Activity Timeline | All events with infinite scroll and detail sheet |
+| Login History | Session login/logout/lock/unlock events |
+| App History | Process start/stop events |
+| USB History | USB connect/disconnect events |
+| Network History | Network events |
+| File Audit | File access audit events |
+| Windows Event Log | System/Application event log entries |
+| Reports | CPU/memory/battery charts, event breakdown |
+| Settings | User profile, sign out |
+
 ## Implementation Status
 
 - [x] **Phase 1** -- Windows Agent Foundation (complete)
@@ -113,7 +158,7 @@ supabase functions serve
 - [x] **Phase 3** -- Agent-to-Backend Integration (complete, sync + pairing + heartbeat)
 - [x] **Phase 4** -- Core Windows Monitors (complete, session/process/USB/network)
 - [x] **Phase 5** -- Advanced Windows Monitoring (complete, file audit/event log/system metrics)
-- [ ] **Phase 6** -- Flutter Mobile App
+- [x] **Phase 6** -- Flutter Mobile App (complete, auth/pairing/dashboard/history/reports)
 - [ ] **Phase 7** -- Push Notifications
 
 ## Documentation
@@ -124,6 +169,7 @@ supabase functions serve
 - [API Reference](docs/api.md)
 - [Security](docs/security.md)
 - [Windows Monitoring](docs/windows-monitoring.md)
+- [Mobile App](docs/mobile-app.md)
 
 ## License
 
