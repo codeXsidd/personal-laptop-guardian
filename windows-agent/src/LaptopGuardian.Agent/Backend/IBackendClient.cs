@@ -17,5 +17,6 @@ public interface IBackendClient
 
     Task<HeartbeatResponse> SendHeartbeatAsync(
         string apiKey,
+        Dictionary<string, object>? metrics = null,
         CancellationToken cancellationToken = default);
 }

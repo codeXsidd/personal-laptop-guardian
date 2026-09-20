@@ -59,7 +59,7 @@ public sealed class HeartbeatServiceTests : IDisposable
     [Fact]
     public async Task SendHeartbeatAsync_DetectsPairing()
     {
-        _backendClient.SendHeartbeatAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+        _backendClient.SendHeartbeatAsync(Arg.Any<string>(), Arg.Any<Dictionary<string, object>?>(), Arg.Any<CancellationToken>())
             .Returns(new HeartbeatResponse("ok", "server-device-id", DateTimeOffset.UtcNow));
 
         var paired = false;
@@ -75,7 +75,7 @@ public sealed class HeartbeatServiceTests : IDisposable
     [Fact]
     public async Task SendHeartbeatAsync_StaysUnpairedOn401()
     {
-        _backendClient.SendHeartbeatAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+        _backendClient.SendHeartbeatAsync(Arg.Any<string>(), Arg.Any<Dictionary<string, object>?>(), Arg.Any<CancellationToken>())
             .Throws(new BackendAuthenticationException());
 
         await _heartbeatService.SendHeartbeatAsync(CancellationToken.None);
@@ -86,7 +86,7 @@ public sealed class HeartbeatServiceTests : IDisposable
     [Fact]
     public async Task SendHeartbeatAsync_DoesNotFirePairedEventTwice()
     {
-        _backendClient.SendHeartbeatAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+        _backendClient.SendHeartbeatAsync(Arg.Any<string>(), Arg.Any<Dictionary<string, object>?>(), Arg.Any<CancellationToken>())
             .Returns(new HeartbeatResponse("ok", "server-device-id", DateTimeOffset.UtcNow));
 
         var pairedCount = 0;
@@ -107,25 +107,25 @@ public sealed class HeartbeatServiceTests : IDisposable
         await _heartbeatService.SendHeartbeatAsync(CancellationToken.None);
 
         await _backendClient.DidNotReceive()
-            .SendHeartbeatAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+            .SendHeartbeatAsync(Arg.Any<string>(), Arg.Any<Dictionary<string, object>?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task SendHeartbeatAsync_SendsCorrectApiKey()
     {
-        _backendClient.SendHeartbeatAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+        _backendClient.SendHeartbeatAsync(Arg.Any<string>(), Arg.Any<Dictionary<string, object>?>(), Arg.Any<CancellationToken>())
             .Returns(new HeartbeatResponse("ok", "device-id", DateTimeOffset.UtcNow));
 
         await _heartbeatService.SendHeartbeatAsync(CancellationToken.None);
 
         await _backendClient.Received(1)
-            .SendHeartbeatAsync("lg_dk_test_heartbeat_key", Arg.Any<CancellationToken>());
+            .SendHeartbeatAsync("lg_dk_test_heartbeat_key", Arg.Any<Dictionary<string, object>?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task SendHeartbeatAsync_HandlesNetworkError()
     {
-        _backendClient.SendHeartbeatAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+        _backendClient.SendHeartbeatAsync(Arg.Any<string>(), Arg.Any<Dictionary<string, object>?>(), Arg.Any<CancellationToken>())
             .Throws(new HttpRequestException("Network unreachable"));
 
         await _heartbeatService.SendHeartbeatAsync(CancellationToken.None);
@@ -136,13 +136,13 @@ public sealed class HeartbeatServiceTests : IDisposable
     [Fact]
     public async Task SendHeartbeatAsync_DetectsRevocation()
     {
-        _backendClient.SendHeartbeatAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+        _backendClient.SendHeartbeatAsync(Arg.Any<string>(), Arg.Any<Dictionary<string, object>?>(), Arg.Any<CancellationToken>())
             .Returns(new HeartbeatResponse("ok", "device-id", DateTimeOffset.UtcNow));
 
         await _heartbeatService.SendHeartbeatAsync(CancellationToken.None);
         Assert.True(_heartbeatService.IsPaired);
 
-        _backendClient.SendHeartbeatAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+        _backendClient.SendHeartbeatAsync(Arg.Any<string>(), Arg.Any<Dictionary<string, object>?>(), Arg.Any<CancellationToken>())
             .Throws(new BackendAuthenticationException());
 
         await _heartbeatService.SendHeartbeatAsync(CancellationToken.None);

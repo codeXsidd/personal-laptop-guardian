@@ -27,4 +27,44 @@ public sealed class AgentOptions
     public string DatabasePath => Path.Combine(DataDirectory, DatabaseFileName);
 
     public string IdentityPath => Path.Combine(DataDirectory, IdentityFileName);
+
+    public FileAuditOptions FileAudit { get; set; } = new();
+
+    public EventLogMonitorOptions EventLogMonitor { get; set; } = new();
+
+    public SystemMetricsOptions SystemMetrics { get; set; } = new();
+}
+
+public sealed class FileAuditOptions
+{
+    public bool Enabled { get; set; }
+
+    public List<string> Directories { get; set; } = [];
+
+    public int DuplicateWindowSeconds { get; set; } = 5;
+}
+
+public sealed class EventLogMonitorOptions
+{
+    public bool Enabled { get; set; } = true;
+
+    public List<EventLogChannelConfig> Channels { get; set; } = [];
+}
+
+public sealed class EventLogChannelConfig
+{
+    public string Name { get; set; } = string.Empty;
+
+    public List<string> Levels { get; set; } = [];
+
+    public List<int>? EventIds { get; set; }
+}
+
+public sealed class SystemMetricsOptions
+{
+    public bool Enabled { get; set; } = true;
+
+    public int IntervalSeconds { get; set; } = 300;
+
+    public int MinChangePercentForEvent { get; set; } = 5;
 }

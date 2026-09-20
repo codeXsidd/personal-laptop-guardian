@@ -81,6 +81,7 @@ public sealed class SupabaseBackendClient : IBackendClient
 
     public async Task<HeartbeatResponse> SendHeartbeatAsync(
         string apiKey,
+        Dictionary<string, object>? metrics = null,
         CancellationToken cancellationToken = default)
     {
         _logger.LogDebug("Sending heartbeat");
@@ -88,7 +89,10 @@ public sealed class SupabaseBackendClient : IBackendClient
         using var client = CreateClient();
         using var request = new HttpRequestMessage(HttpMethod.Post, "functions/v1/heartbeat");
         request.Headers.Add("x-device-api-key", apiKey);
-        request.Content = JsonContent.Create(new { }, options: JsonOptions);
+        var payload = metrics is not null
+            ? (object)new { metrics }
+            : new { };
+        request.Content = JsonContent.Create(payload, options: JsonOptions);
 
         using var response = await client.SendAsync(request, cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);

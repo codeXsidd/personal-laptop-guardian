@@ -99,11 +99,15 @@ LaptopGuardian.Agent/
 │
 ├── Monitors/                           # One monitor per event source
 │   ├── IEventMonitor.cs               # Common interface
+│   ├── ISystemMetricsProvider.cs      # Metrics snapshot interface for heartbeat
 │   ├── StartupMonitor.cs             # Agent start event
 │   ├── SessionMonitor.cs             # Login/logout/lock/unlock via Security log
 │   ├── ProcessMonitor.cs             # App start/stop via snapshot polling
 │   ├── UsbMonitor.cs                 # USB connect/disconnect via WMI
-│   └── NetworkMonitor.cs             # Network changes via NetworkChange events
+│   ├── NetworkMonitor.cs             # Network changes via NetworkChange events
+│   ├── SystemMetricsMonitor.cs       # CPU/memory/disk/battery periodic snapshots
+│   ├── EventLogMonitor.cs            # Configurable Windows Event Log watcher
+│   └── FileAuditMonitor.cs           # File access auditing via Security log
 │
 ├── Models/
 │   ├── DeviceEvent.cs                 # Core event model with deterministic UUID
@@ -141,6 +145,9 @@ Monitors emit events through an `IEventStore` that writes to SQLite. The `SyncEn
 | ProcessMonitor | Process snapshot polling (30s) | `process_start`, `process_stop` | `System.Diagnostics.Process.GetProcesses()` | None |
 | UsbMonitor | WMI events | `usb_connected`, `usb_disconnected` | `ManagementEventWatcher` on `Win32_PnPEntity` | None |
 | NetworkMonitor | .NET NetworkChange events | `network_connected`, `network_disconnected`, `network_changed` | `NetworkChange.NetworkAddressChanged` + `NetworkAvailabilityChanged` | None |
+| SystemMetricsMonitor | Performance counters, WMI, DriveInfo (configurable interval) | `system_metrics` | `PerformanceCounter`, `Win32_Battery` WMI, `DriveInfo` | None |
+| EventLogMonitor | Configurable Windows Event Log channels | `eventlog_entry` | `EventLogWatcher` on configured channels with level/ID filters | Depends on channel |
+| FileAuditMonitor | Security Event Log (Object Access) | `file_access` | `EventLogWatcher` on Security log (EventIDs 4663, 4656) | Event Log Readers + audit policy |
 
 **SessionMonitor** filters to interactive logon types (2, 7, 10, 11) and excludes system accounts (SYSTEM, LOCAL SERVICE, machine accounts). Degrades gracefully if the Security log is inaccessible.
 
@@ -149,6 +156,12 @@ Monitors emit events through an `IEventStore` that writes to SQLite. The `SyncEn
 **UsbMonitor** uses WMI intrinsic events (2-second polling). Filters to USB devices by PNPDeviceID prefix (USB\, USBSTOR\, USBPRINT\, HID\). Does not read file contents or inspect USB storage.
 
 **NetworkMonitor** debounces rapid-fire events with a 2-second window. Records initial network state on startup. Captures adapter name, type, IPv4/IPv6 addresses, and status.
+
+**SystemMetricsMonitor** collects CPU, memory, disk, and battery metrics at a configurable interval (default 5 minutes). Exposes latest metrics to the heartbeat system via `ISystemMetricsProvider`. Degrades gracefully when individual metric sources are unavailable.
+
+**EventLogMonitor** watches configurable Event Log channels (default: Application and System errors/criticals). Supports level filtering and optional event ID filtering. XPath queries are built from configuration.
+
+**FileAuditMonitor** monitors file access in explicitly configured directories via Windows Object Access Auditing (Security log EventIDs 4663/4656). Requires Windows audit policy and directory SACLs to be configured. Includes duplicate event suppression. Does not read file contents. See [Windows Monitoring Guide](windows-monitoring.md) for setup instructions.
 
 #### Offline-First Data Flow
 

@@ -2,6 +2,7 @@ using LaptopGuardian.Agent.Backend;
 using LaptopGuardian.Agent.Configuration;
 using LaptopGuardian.Agent.Connectivity;
 using LaptopGuardian.Agent.Identity;
+using LaptopGuardian.Agent.Monitors;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -12,6 +13,7 @@ public sealed class HeartbeatService : IHeartbeatService
     private readonly IBackendClient _backendClient;
     private readonly IDeviceIdentityService _identityService;
     private readonly IConnectivityTracker _connectivityTracker;
+    private readonly ISystemMetricsProvider? _metricsProvider;
     private readonly AgentOptions _options;
     private readonly ILogger<HeartbeatService> _logger;
     private CancellationTokenSource? _cts;
@@ -25,13 +27,15 @@ public sealed class HeartbeatService : IHeartbeatService
         IDeviceIdentityService identityService,
         IConnectivityTracker connectivityTracker,
         IOptions<AgentOptions> options,
-        ILogger<HeartbeatService> logger)
+        ILogger<HeartbeatService> logger,
+        ISystemMetricsProvider? metricsProvider = null)
     {
         _backendClient = backendClient;
         _identityService = identityService;
         _connectivityTracker = connectivityTracker;
         _options = options.Value;
         _logger = logger;
+        _metricsProvider = metricsProvider;
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
@@ -91,7 +95,8 @@ public sealed class HeartbeatService : IHeartbeatService
 
         try
         {
-            var response = await _backendClient.SendHeartbeatAsync(identity.ApiKey, ct);
+            var metrics = BuildMetricsPayload();
+            var response = await _backendClient.SendHeartbeatAsync(identity.ApiKey, metrics, ct);
             _logger.LogDebug("Heartbeat acknowledged, server time: {ServerTime}", response.ServerTime);
 
             if (!IsPaired)
@@ -126,6 +131,18 @@ public sealed class HeartbeatService : IHeartbeatService
         {
             _logger.LogError(ex, "Backend error during heartbeat");
         }
+    }
+
+    private Dictionary<string, object>? BuildMetricsPayload()
+    {
+        var snapshot = _metricsProvider?.LatestMetrics;
+        if (snapshot is null)
+            return null;
+
+        if (OperatingSystem.IsWindows())
+            return SystemMetricsMonitor.BuildPayload(snapshot);
+
+        return null;
     }
 
     public void Dispose()

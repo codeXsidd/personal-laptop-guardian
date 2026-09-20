@@ -61,6 +61,13 @@ try
         builder.Services.AddSingleton<IEventMonitor, SessionMonitor>();
         builder.Services.AddSingleton<IEventMonitor, ProcessMonitor>();
         builder.Services.AddSingleton<IEventMonitor, UsbMonitor>();
+
+        builder.Services.AddSingleton<SystemMetricsMonitor>();
+        builder.Services.AddSingleton<IEventMonitor>(sp => sp.GetRequiredService<SystemMetricsMonitor>());
+        builder.Services.AddSingleton<ISystemMetricsProvider>(sp => sp.GetRequiredService<SystemMetricsMonitor>());
+
+        builder.Services.AddSingleton<IEventMonitor, EventLogMonitor>();
+        builder.Services.AddSingleton<IEventMonitor, FileAuditMonitor>();
     }
     builder.Services.AddSingleton<IEventMonitor, NetworkMonitor>();
 

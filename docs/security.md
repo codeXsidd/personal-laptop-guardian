@@ -135,6 +135,9 @@ Standard Supabase Auth flow:
 | ProcessMonitor | Process name, PID, executable path, start/stop time, session ID | Command-line arguments, process memory, child process tree |
 | UsbMonitor | Device name, class, manufacturer, PnP device ID | File listings, file contents, device serial numbers beyond PnP ID |
 | NetworkMonitor | Adapter name, type, IPv4/IPv6, connection status, hostname | Network traffic, DNS queries, packet contents, remote endpoints |
+| SystemMetricsMonitor | CPU %, memory used/total/%, disk used/free per drive, battery %, hostname, OS version | Per-process resource usage, GPU metrics, temperature |
+| EventLogMonitor | Channel, event ID, provider, level, timestamp, message (truncated), user SID | Raw event data, binary payloads, full event XML |
+| FileAuditMonitor | File path, access type, username, event ID, process name/PID | File contents, directory listings, file metadata beyond path |
 
 ### Monitor Permissions
 
@@ -144,6 +147,9 @@ Standard Supabase Auth flow:
 | ProcessMonitor | None (user-level access) | Cannot read executable path for elevated processes — path recorded as null |
 | UsbMonitor | None (WMI access) | Logs warning if WMI unavailable — agent continues without USB events |
 | NetworkMonitor | None | Always available on Windows |
+| SystemMetricsMonitor | None | Individual metrics omitted if counter unavailable |
+| EventLogMonitor | Depends on channel (Security requires Event Log Readers) | Inaccessible channels skipped — agent continues |
+| FileAuditMonitor | Event Log Readers + Windows audit policy | Monitor disabled if Security log inaccessible — agent continues |
 
 ## Network Security
 
