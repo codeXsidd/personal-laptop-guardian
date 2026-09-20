@@ -19,7 +19,7 @@ This application is designed exclusively for authorized monitoring of the user's
 |--------|-----------|
 | Stolen/lost laptop | Agent continues collecting events offline; user sees last-known state and event history on phone |
 | Unauthorized physical access | Login failure events trigger push notifications |
-| Agent API key theft | Key is SHA-256 hashed server-side; agent stores key locally (DPAPI planned); RLS limits key scope to its own device |
+| Agent API key theft | Key is SHA-256 hashed server-side; agent stores key locally encrypted with DPAPI; RLS limits key scope to its own device |
 | Network eavesdropping | All traffic over HTTPS/TLS 1.2+ |
 | Backend data breach | RLS ensures users only see their own devices; API keys are SHA-256 hashed (high-entropy, so no brute-force concern) |
 | Mobile app on stolen phone | Supabase Auth session with standard JWT expiry; app can require biometric unlock (future) |
@@ -111,7 +111,7 @@ Standard Supabase Auth flow:
 |--------|----------|-----------|
 | Supabase URL | Agent: appsettings.json | Not a secret (public) |
 | Supabase anon key | Agent: appsettings.json | Not a secret (public, limited by RLS) |
-| Device API key | Agent: local JSON file | Plaintext now; DPAPI encryption planned |
+| Device API key | Agent: local JSON file | DPAPI-encrypted (Windows CurrentUser scope) |
 | Supabase service role key | Edge function env only | Supabase dashboard secrets |
 | Firebase server key | Edge function env only | Supabase dashboard secrets |
 | User password | Never stored | Supabase Auth handles hashing |
@@ -124,6 +124,26 @@ Standard Supabase Auth flow:
 - Screen contents
 - Browser history or cookies
 - File contents (only file access metadata from Windows audit logs)
+- Clipboard contents
+- Network packet payloads
+
+### What Each Monitor Collects
+
+| Monitor | Collected | NOT Collected |
+|---------|-----------|---------------|
+| SessionMonitor | Username, domain, logon type, session ID, event source | Password, authentication token |
+| ProcessMonitor | Process name, PID, executable path, start/stop time, session ID | Command-line arguments, process memory, child process tree |
+| UsbMonitor | Device name, class, manufacturer, PnP device ID | File listings, file contents, device serial numbers beyond PnP ID |
+| NetworkMonitor | Adapter name, type, IPv4/IPv6, connection status, hostname | Network traffic, DNS queries, packet contents, remote endpoints |
+
+### Monitor Permissions
+
+| Monitor | Required Permission | Graceful Degradation |
+|---------|-------------------|---------------------|
+| SessionMonitor | Event Log Readers group membership | Logs warning, monitor disabled — agent continues without session events |
+| ProcessMonitor | None (user-level access) | Cannot read executable path for elevated processes — path recorded as null |
+| UsbMonitor | None (WMI access) | Logs warning if WMI unavailable — agent continues without USB events |
+| NetworkMonitor | None | Always available on Windows |
 
 ## Network Security
 
@@ -143,8 +163,10 @@ Standard Supabase Auth flow:
 
 ### Agent Identity File
 - Stored in `%ProgramData%\LaptopGuardian\device-identity.json`
-- Contains device UUID, API key, machine name
-- DPAPI encryption for the API key is planned for a future phase
+- Contains device UUID, server device ID, pairing code, machine name
+- API key is encrypted using Windows DPAPI (`System.Security.Cryptography.ProtectedData`) with `DataProtectionScope.CurrentUser`
+- The plaintext API key is never written to disk; only the DPAPI-encrypted bytes (base64-encoded) are persisted
+- DPAPI keys are tied to the Windows user profile — moving the identity file to another machine or user will fail decryption
 
 ### Windows Permissions
 - Agent runs as `LOCAL SERVICE` or a dedicated service account

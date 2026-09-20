@@ -53,7 +53,7 @@ Windows Agent (C# .NET 10)  ->  Supabase (PostgreSQL + Edge Functions)  ->  Flut
 cd windows-agent
 dotnet build LaptopGuardian.slnx
 
-# Run tests (21 tests)
+# Run tests (99 tests)
 dotnet test LaptopGuardian.slnx
 
 # Run the agent locally (console mode)
@@ -108,12 +108,12 @@ supabase functions serve
 
 ## Implementation Status
 
-- [x] **Phase 1** -- Windows Agent Foundation (complete, 21 tests passing)
-- [x] **Phase 2** -- Supabase Backend Foundation (complete, schema + edge functions + tests)
-- [ ] **Phase 3** -- Agent-to-Backend Integration
-- [ ] **Phase 4** -- Flutter Mobile App
-- [ ] **Phase 5** -- Push Notifications
-- [ ] **Phase 6** -- Additional Monitors
+- [x] **Phase 1** -- Windows Agent Foundation (complete)
+- [x] **Phase 2** -- Supabase Backend Foundation (complete, schema + edge functions + pgTAP tests)
+- [x] **Phase 3** -- Agent-to-Backend Integration (complete, sync + pairing + heartbeat)
+- [x] **Phase 4** -- Core Windows Monitors (complete, session/process/USB/network)
+- [ ] **Phase 5** -- Flutter Mobile App
+- [ ] **Phase 6** -- Push Notifications
 
 ## Documentation
 

@@ -66,52 +66,55 @@
 
 ```
 LaptopGuardian.Agent/
-├── Program.cs                          # Host builder, DI registration
-├── appsettings.json                    # Configuration
-├── Worker.cs                           # BackgroundService entry point
+├── Program.cs                          # Host builder, DI, HttpClient registration
+├── appsettings.json                    # Configuration (Supabase URL/key via user-secrets)
+├── Worker.cs                           # BackgroundService orchestrator
 │
 ├── Configuration/
 │   └── AgentOptions.cs                 # Strongly-typed config model
 │
 ├── Identity/
-│   ├── IDeviceIdentityService.cs       # Device ID generation and persistence
-│   └── DeviceIdentityService.cs
+│   ├── IDeviceIdentityService.cs       # Device ID generation, persistence, save
+│   ├── DeviceIdentityService.cs        # DPAPI-encrypted API key storage
+│   ├── ICredentialProtector.cs         # Encrypt/decrypt interface
+│   └── DpapiCredentialProtector.cs     # Windows DPAPI implementation
 │
-├── Monitors/                           # One monitor per event source
-│   ├── IEventMonitor.cs                # Common interface
-│   ├── StartupMonitor.cs              # System startup/shutdown
-│   ├── SessionMonitor.cs              # Login/logout/lock/unlock
-│   ├── ProcessMonitor.cs             # Application/process start/stop
-│   ├── UsbMonitor.cs                 # USB device connect/disconnect
-│   ├── NetworkMonitor.cs             # Network adapter changes
-│   ├── EventLogMonitor.cs            # Windows Event Log collector
-│   ├── FileAuditMonitor.cs           # NTFS audit events for configured dirs
-│   └── SystemMetricsMonitor.cs       # CPU, memory, disk, battery
+├── Backend/
+│   ├── IBackendClient.cs              # HTTP client interface for Supabase
+│   ├── SupabaseBackendClient.cs       # Implementation (IHttpClientFactory)
+│   ├── BackendModels.cs               # Response DTOs
+│   └── BackendExceptions.cs           # Typed exceptions (Auth, RateLimit, etc.)
 │
-├── Models/
-│   ├── DeviceEvent.cs                  # Core event model
-│   ├── EventType.cs                    # Event type enum
-│   ├── EventSeverity.cs               # Severity enum
-│   ├── SyncStatus.cs                  # Pending/Synced/Failed enum
-│   └── DeviceInfo.cs                  # Static device metadata
-│
-├── Storage/
-│   ├── IEventStore.cs                  # Local persistence interface
-│   ├── SqliteEventStore.cs            # SQLite implementation
-│   └── Migrations/                    # SQLite schema migrations
+├── Connectivity/
+│   ├── IConnectivityTracker.cs        # Online/offline detection interface
+│   └── ConnectivityTracker.cs         # NetworkChange + HTTP health check
 │
 ├── Sync/
-│   ├── ISyncEngine.cs                  # Synchronization interface
-│   ├── SyncEngine.cs                  # Batch upload, retry, dedup
-│   └── IBackendClient.cs             # HTTP client interface for Supabase
-│   └── SupabaseClient.cs
+│   ├── ISyncEngine.cs                 # Sync loop interface
+│   └── SyncEngine.cs                  # Batch upload, exponential backoff, retry
 │
-├── Pairing/
-│   ├── IPairingService.cs             # Device pairing interface
-│   └── PairingService.cs
+├── Heartbeat/
+│   ├── IHeartbeatService.cs           # Heartbeat + pairing detection interface
+│   └── HeartbeatService.cs            # Periodic heartbeat, detects pairing via 200/401
 │
-└── Logging/
-    └── StructuredLogger.cs            # Serilog configuration
+├── Monitors/                           # One monitor per event source
+│   ├── IEventMonitor.cs               # Common interface
+│   ├── StartupMonitor.cs             # Agent start event
+│   ├── SessionMonitor.cs             # Login/logout/lock/unlock via Security log
+│   ├── ProcessMonitor.cs             # App start/stop via snapshot polling
+│   ├── UsbMonitor.cs                 # USB connect/disconnect via WMI
+│   └── NetworkMonitor.cs             # Network changes via NetworkChange events
+│
+├── Models/
+│   ├── DeviceEvent.cs                 # Core event model with deterministic UUID
+│   ├── DeviceIdentity.cs              # Device identity with registration state
+│   ├── EventType.cs                   # Event type constants
+│   ├── EventSeverity.cs              # Severity constants
+│   └── SyncStatus.cs                 # Pending/Synced/Failed constants
+│
+└── Storage/
+    ├── IEventStore.cs                 # Local persistence interface
+    └── SqliteEventStore.cs            # SQLite WAL mode, reset failed events
 ```
 
 #### Monitor Architecture
@@ -128,6 +131,24 @@ public interface IEventMonitor : IDisposable
 ```
 
 Monitors emit events through an `IEventStore` that writes to SQLite. The `SyncEngine` runs on a separate timer, picks up pending events, and uploads them in batches.
+
+#### Monitor Details
+
+| Monitor | Source | Events | Windows API | Permissions |
+|---------|--------|--------|-------------|-------------|
+| StartupMonitor | Agent lifecycle | `agent_started` | N/A | None |
+| SessionMonitor | Security Event Log | `session_login`, `session_logout`, `session_lock`, `session_unlock` | `EventLogWatcher` on Security log (EventIDs 4624, 4634, 4647, 4800, 4801) | Event Log Readers group |
+| ProcessMonitor | Process snapshot polling (30s) | `process_start`, `process_stop` | `System.Diagnostics.Process.GetProcesses()` | None |
+| UsbMonitor | WMI events | `usb_connected`, `usb_disconnected` | `ManagementEventWatcher` on `Win32_PnPEntity` | None |
+| NetworkMonitor | .NET NetworkChange events | `network_connected`, `network_disconnected`, `network_changed` | `NetworkChange.NetworkAddressChanged` + `NetworkAvailabilityChanged` | None |
+
+**SessionMonitor** filters to interactive logon types (2, 7, 10, 11) and excludes system accounts (SYSTEM, LOCAL SERVICE, machine accounts). Degrades gracefully if the Security log is inaccessible.
+
+**ProcessMonitor** compares snapshots using PID + start time as a composite key to handle PID reuse. The first snapshot is treated as a baseline (no events emitted). Excludes well-known system processes (svchost, csrss, lsass, etc.). Processes shorter than the poll interval may be missed.
+
+**UsbMonitor** uses WMI intrinsic events (2-second polling). Filters to USB devices by PNPDeviceID prefix (USB\, USBSTOR\, USBPRINT\, HID\). Does not read file contents or inspect USB storage.
+
+**NetworkMonitor** debounces rapid-fire events with a 2-second window. Records initial network state on startup. Captures adapter name, type, IPv4/IPv6 addresses, and status.
 
 #### Offline-First Data Flow
 
@@ -147,7 +168,7 @@ SyncEngine timer fires
 Query: SELECT * FROM events WHERE status = 'Pending' LIMIT batch_size
     │
     ▼
-POST /rest/v1/rpc/ingest_events (batch)
+POST /functions/v1/ingest-events (batch)
     │
     ├── Success: UPDATE status = 'Synced'
     │

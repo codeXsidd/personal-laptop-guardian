@@ -9,6 +9,7 @@ public interface IEventStore
     Task<IReadOnlyList<DeviceEvent>> GetPendingEventsAsync(int limit, CancellationToken cancellationToken = default);
     Task MarkSyncedAsync(IEnumerable<string> eventIds, CancellationToken cancellationToken = default);
     Task MarkFailedAsync(string eventId, CancellationToken cancellationToken = default);
+    Task ResetFailedEventsAsync(int maxRetryCount, CancellationToken cancellationToken = default);
     Task<int> GetPendingCountAsync(CancellationToken cancellationToken = default);
     Task<int> GetTotalCountAsync(CancellationToken cancellationToken = default);
 }

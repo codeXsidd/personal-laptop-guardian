@@ -24,7 +24,7 @@ public sealed class DeviceIdentityServiceTests : IDisposable
     private DeviceIdentityService CreateService()
     {
         var options = Options.Create(new AgentOptions { DataDirectory = _tempDir });
-        return new DeviceIdentityService(options, NullLogger<DeviceIdentityService>.Instance);
+        return new DeviceIdentityService(options, new PassthroughCredentialProtector(), NullLogger<DeviceIdentityService>.Instance);
     }
 
     [Fact]
@@ -71,7 +71,6 @@ public sealed class DeviceIdentityServiceTests : IDisposable
         var firstService = CreateService();
         var originalIdentity = await firstService.GetOrCreateIdentityAsync();
 
-        // Create a new service instance (simulates restart)
         var secondService = CreateService();
         var loadedIdentity = await secondService.GetOrCreateIdentityAsync();
 
@@ -83,11 +82,64 @@ public sealed class DeviceIdentityServiceTests : IDisposable
     {
         var nestedDir = Path.Combine(_tempDir, "nested", "subdir");
         var options = Options.Create(new AgentOptions { DataDirectory = nestedDir });
-        var service = new DeviceIdentityService(options, NullLogger<DeviceIdentityService>.Instance);
+        var service = new DeviceIdentityService(options, new PassthroughCredentialProtector(), NullLogger<DeviceIdentityService>.Instance);
 
         var identity = await service.GetOrCreateIdentityAsync();
 
         Assert.NotNull(identity);
         Assert.True(Directory.Exists(nestedDir));
+    }
+
+    [Fact]
+    public async Task SaveIdentityAsync_PersistsApiKeyEncrypted()
+    {
+        var service = CreateService();
+        var identity = await service.GetOrCreateIdentityAsync();
+
+        identity.ApiKey = "lg_dk_test_api_key_12345";
+        identity.ServerDeviceId = Guid.NewGuid().ToString();
+        identity.PairingCode = "ABC123";
+        await service.SaveIdentityAsync(identity);
+
+        var secondService = CreateService();
+        var loaded = await secondService.GetOrCreateIdentityAsync();
+
+        Assert.Equal(identity.DeviceId, loaded.DeviceId);
+        Assert.Equal("lg_dk_test_api_key_12345", loaded.ApiKey);
+        Assert.Equal(identity.ServerDeviceId, loaded.ServerDeviceId);
+        Assert.Equal("ABC123", loaded.PairingCode);
+        Assert.True(loaded.IsRegistered);
+    }
+
+    [Fact]
+    public async Task SaveIdentityAsync_PersistsPairedAt()
+    {
+        var service = CreateService();
+        var identity = await service.GetOrCreateIdentityAsync();
+
+        identity.ApiKey = "lg_dk_test";
+        identity.PairedAt = DateTimeOffset.UtcNow;
+        await service.SaveIdentityAsync(identity);
+
+        var secondService = CreateService();
+        var loaded = await secondService.GetOrCreateIdentityAsync();
+
+        Assert.True(loaded.IsPaired);
+        Assert.NotNull(loaded.PairedAt);
+    }
+
+    [Fact]
+    public async Task SaveIdentityAsync_DoesNotStorePlaintextApiKey()
+    {
+        var service = CreateService();
+        var identity = await service.GetOrCreateIdentityAsync();
+
+        identity.ApiKey = "lg_dk_secret_key_should_not_be_plaintext";
+        await service.SaveIdentityAsync(identity);
+
+        var filePath = Path.Combine(_tempDir, "device-identity.json");
+        var fileContent = await File.ReadAllTextAsync(filePath);
+        Assert.DoesNotContain("lg_dk_secret_key_should_not_be_plaintext", fileContent);
+        Assert.Contains("EncryptedApiKey", fileContent);
     }
 }

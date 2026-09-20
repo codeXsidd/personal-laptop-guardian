@@ -37,7 +37,8 @@ export async function authenticateDevice(
   if (error || !data) return null;
 
   const device = Array.isArray(data) ? data[0] : data;
-  return device ?? null;
+  if (!device?.id) return null;
+  return device;
 }
 
 export async function getUserIdFromAuth(

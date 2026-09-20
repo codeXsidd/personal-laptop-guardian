@@ -187,6 +187,30 @@ public sealed class SqliteEventStore : IEventStore, IDisposable
         return Convert.ToInt32(result);
     }
 
+    public async Task ResetFailedEventsAsync(int maxRetryCount, CancellationToken cancellationToken = default)
+    {
+        await _writeLock.WaitAsync(cancellationToken);
+        try
+        {
+            await using var connection = new SqliteConnection(_connectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                UPDATE events SET sync_status = 'pending'
+                WHERE sync_status = 'failed' AND retry_count < @maxRetryCount
+                """;
+            command.Parameters.AddWithValue("@maxRetryCount", maxRetryCount);
+            var affected = await command.ExecuteNonQueryAsync(cancellationToken);
+
+            _logger.LogInformation("Reset {Count} failed events to pending", affected);
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
+    }
+
     public async Task<int> GetTotalCountAsync(CancellationToken cancellationToken = default)
     {
         await using var connection = new SqliteConnection(_connectionString);

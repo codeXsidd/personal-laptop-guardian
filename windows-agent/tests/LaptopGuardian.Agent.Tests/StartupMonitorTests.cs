@@ -28,6 +28,7 @@ public sealed class StartupMonitorTests : IAsyncLifetime, IDisposable
         _store = new SqliteEventStore(connectionString, NullLogger<SqliteEventStore>.Instance);
         _identityService = new DeviceIdentityService(
             Options.Create(new AgentOptions { DataDirectory = _tempDir }),
+            new PassthroughCredentialProtector(),
             NullLogger<DeviceIdentityService>.Instance);
     }
 

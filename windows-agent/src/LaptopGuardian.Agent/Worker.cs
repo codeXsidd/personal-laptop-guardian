@@ -1,5 +1,14 @@
+using System.Reflection;
+using LaptopGuardian.Agent.Backend;
+using LaptopGuardian.Agent.Configuration;
+using LaptopGuardian.Agent.Connectivity;
+using LaptopGuardian.Agent.Heartbeat;
+using LaptopGuardian.Agent.Identity;
+using LaptopGuardian.Agent.Models;
 using LaptopGuardian.Agent.Monitors;
 using LaptopGuardian.Agent.Storage;
+using LaptopGuardian.Agent.Sync;
+using Microsoft.Extensions.Options;
 
 namespace LaptopGuardian.Agent;
 
@@ -7,17 +16,39 @@ public sealed class Worker : BackgroundService
 {
     private readonly IEventStore _eventStore;
     private readonly IEnumerable<IEventMonitor> _monitors;
+    private readonly IDeviceIdentityService _identityService;
+    private readonly IBackendClient _backendClient;
+    private readonly IConnectivityTracker _connectivityTracker;
+    private readonly ISyncEngine _syncEngine;
+    private readonly IHeartbeatService _heartbeatService;
+    private readonly AgentOptions _options;
     private readonly ILogger<Worker> _logger;
 
     public Worker(
         IEventStore eventStore,
         IEnumerable<IEventMonitor> monitors,
+        IDeviceIdentityService identityService,
+        IBackendClient backendClient,
+        IConnectivityTracker connectivityTracker,
+        ISyncEngine syncEngine,
+        IHeartbeatService heartbeatService,
+        IOptions<AgentOptions> options,
         ILogger<Worker> logger)
     {
         _eventStore = eventStore;
         _monitors = monitors;
+        _identityService = identityService;
+        _backendClient = backendClient;
+        _connectivityTracker = connectivityTracker;
+        _syncEngine = syncEngine;
+        _heartbeatService = heartbeatService;
+        _options = options.Value;
         _logger = logger;
     }
+
+    private bool IsBackendConfigured =>
+        !string.IsNullOrWhiteSpace(_options.SupabaseUrl) &&
+        !string.IsNullOrWhiteSpace(_options.SupabaseAnonKey);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -25,6 +56,9 @@ public sealed class Worker : BackgroundService
 
         await _eventStore.InitializeAsync(stoppingToken);
         _logger.LogInformation("Event store initialized");
+
+        var identity = await _identityService.GetOrCreateIdentityAsync(stoppingToken);
+        _logger.LogInformation("Device ID: {DeviceId}", identity.DeviceId);
 
         foreach (var monitor in _monitors)
         {
@@ -40,8 +74,34 @@ public sealed class Worker : BackgroundService
             }
         }
 
+        if (IsBackendConfigured)
+        {
+            if (!identity.IsRegistered)
+            {
+                await RegisterDeviceAsync(identity, stoppingToken);
+            }
+            else
+            {
+                _logger.LogInformation("Device already registered. Paired: {IsPaired}", identity.IsPaired);
+            }
+
+            await _connectivityTracker.StartAsync(stoppingToken);
+            _logger.LogInformation("Connectivity tracker started");
+
+            await _heartbeatService.StartAsync(stoppingToken);
+            _logger.LogInformation("Heartbeat service started");
+
+            await _syncEngine.StartAsync(stoppingToken);
+            _logger.LogInformation("Sync engine started");
+        }
+        else
+        {
+            _logger.LogWarning("Supabase not configured — running in offline-only mode. " +
+                               "Set Agent:SupabaseUrl and Agent:SupabaseAnonKey to enable sync");
+        }
+
         var pendingCount = await _eventStore.GetPendingCountAsync(stoppingToken);
-        _logger.LogInformation("Agent running. Pending events in queue: {PendingCount}", pendingCount);
+        _logger.LogInformation("Agent running. Pending events: {PendingCount}", pendingCount);
 
         try
         {
@@ -53,9 +113,51 @@ public sealed class Worker : BackgroundService
         }
     }
 
+    private async Task RegisterDeviceAsync(DeviceIdentity identity, CancellationToken ct)
+    {
+        var osVersion = Environment.OSVersion.VersionString;
+        var agentVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "0.0.0";
+
+        try
+        {
+            _logger.LogInformation("Registering device with backend...");
+            var response = await _backendClient.RegisterDeviceAsync(
+                identity.MachineName, osVersion, agentVersion, ct);
+
+            identity.ServerDeviceId = response.DeviceId;
+            identity.ApiKey = response.ApiKey;
+            identity.PairingCode = response.PairingCode;
+            identity.PairingCodeExpiresAt = response.ExpiresAt;
+
+            await _identityService.SaveIdentityAsync(identity, ct);
+
+            _logger.LogInformation(
+                "Device registered successfully. Pairing code: {PairingCode} (expires: {ExpiresAt})",
+                response.PairingCode, response.ExpiresAt);
+            _logger.LogInformation(
+                "Enter this pairing code in the mobile app to complete device setup");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to register device — will retry on next startup");
+        }
+    }
+
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("Laptop Guardian agent stopping");
+
+        if (IsBackendConfigured)
+        {
+            try { await _syncEngine.StopAsync(cancellationToken); }
+            catch (Exception ex) { _logger.LogError(ex, "Error stopping sync engine"); }
+
+            try { await _heartbeatService.StopAsync(cancellationToken); }
+            catch (Exception ex) { _logger.LogError(ex, "Error stopping heartbeat service"); }
+
+            try { await _connectivityTracker.StopAsync(cancellationToken); }
+            catch (Exception ex) { _logger.LogError(ex, "Error stopping connectivity tracker"); }
+        }
 
         foreach (var monitor in _monitors.Reverse())
         {
