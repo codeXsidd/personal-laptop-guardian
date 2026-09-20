@@ -1,0 +1,55 @@
+# Environment variables
+.env
+
+# .NET / C#
+windows-agent/**/bin/
+windows-agent/**/obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.nupkg
+*.snupkg
+project.lock.json
+*.nuget.props
+*.nuget.targets
+
+# Node (edge functions)
+node_modules/
+npm-debug.log*
+
+# Flutter / Dart
+mobile/.dart_tool/
+mobile/.packages
+mobile/build/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+*.iml
+
+# Supabase local
+backend/supabase/.temp/
+backend/supabase/.branches/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*.code-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs and databases
+*.log
+*.db
+*.db-shm
+*.db-wal
+
+# Build output
+*.exe
+*.msi
+*.dll
+publish/
