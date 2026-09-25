@@ -1,3 +1,6 @@
+import 'dart:ui';
+
+import 'package:flutter/material.dart' show Icons, IconData;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:laptop_guardian/models/device.dart';
@@ -286,6 +289,81 @@ void main() {
       expect(EventTypes.processTypes, contains('process_start'));
       expect(EventTypes.processTypes, contains('process_stop'));
       expect(EventTypes.processTypes.length, 2);
+    });
+
+    test('usb types list', () {
+      expect(EventTypes.usbTypes, contains('usb_connected'));
+      expect(EventTypes.usbTypes, contains('usb_disconnected'));
+      expect(EventTypes.usbTypes.length, 2);
+    });
+
+    test('network types list', () {
+      expect(EventTypes.networkTypes, contains('network_connected'));
+      expect(EventTypes.networkTypes, contains('network_disconnected'));
+      expect(EventTypes.networkTypes, contains('network_changed'));
+      expect(EventTypes.networkTypes.length, 3);
+    });
+
+    test('icon returns valid icon for all known types', () {
+      for (final type in [
+        EventTypes.agentStarted,
+        EventTypes.systemStartup,
+        EventTypes.systemShutdown,
+        EventTypes.sessionLogin,
+        EventTypes.sessionLogout,
+        EventTypes.processStart,
+        EventTypes.processStop,
+        EventTypes.usbConnected,
+        EventTypes.usbDisconnected,
+        EventTypes.networkConnected,
+        EventTypes.networkDisconnected,
+        EventTypes.eventlogEntry,
+        EventTypes.fileAccess,
+        EventTypes.systemMetrics,
+      ]) {
+        expect(EventTypes.icon(type), isA<IconData>(),
+            reason: '$type should have an icon');
+      }
+    });
+
+    test('icon returns fallback for unknown type', () {
+      expect(EventTypes.icon('unknown_xyz'), Icons.event_note);
+    });
+
+    test('severityColor maps all levels', () {
+      expect(EventTypes.severityColor('critical'), isA<Color>());
+      expect(EventTypes.severityColor('high'), isA<Color>());
+      expect(EventTypes.severityColor('medium'), isA<Color>());
+      expect(EventTypes.severityColor('low'), isA<Color>());
+      expect(EventTypes.severityColor('info'), isA<Color>());
+    });
+  });
+
+  group('ActivityEvent payload defaults', () {
+    test('null payload becomes empty map', () {
+      final event = ActivityEvent.fromJson({
+        'id': 'test-id',
+        'device_id': 'dev-1',
+        'event_type': 'session_login',
+        'severity': 'info',
+        'timestamp': '2025-01-01T00:00:00Z',
+        'payload': null,
+        'synced_at': '2025-01-01T00:00:01Z',
+      });
+      expect(event.payload, isEmpty);
+    });
+
+    test('severity defaults to info when null', () {
+      final event = ActivityEvent.fromJson({
+        'id': 'test-id',
+        'device_id': 'dev-1',
+        'event_type': 'process_start',
+        'severity': null,
+        'timestamp': '2025-01-01T00:00:00Z',
+        'payload': {},
+        'synced_at': '2025-01-01T00:00:01Z',
+      });
+      expect(event.severity, 'info');
     });
   });
 }

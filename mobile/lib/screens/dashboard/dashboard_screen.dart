@@ -10,6 +10,7 @@ import '../../models/event_type.dart';
 import '../../models/heartbeat.dart';
 import '../../providers/device_provider.dart';
 import '../../providers/event_provider.dart';
+import '../events/event_list_screen.dart' show eventSubtitle;
 
 class DashboardScreen extends ConsumerWidget {
   final String deviceId;
@@ -555,7 +556,7 @@ class _EventRow extends StatelessWidget {
                 Text(EventTypes.displayName(event.eventType),
                     style: theme.textTheme.bodySmall
                         ?.copyWith(fontWeight: FontWeight.w500)),
-                Text(_summaryText(event),
+                Text(eventSubtitle(event),
                     style: theme.textTheme.labelSmall
                         ?.copyWith(color: theme.colorScheme.outline),
                     maxLines: 1,
@@ -571,27 +572,4 @@ class _EventRow extends StatelessWidget {
     );
   }
 
-  String _summaryText(ActivityEvent e) {
-    final p = e.payload;
-    return switch (e.eventType) {
-      'session_login' || 'session_logout' || 'session_lock' || 'session_unlock' =>
-        p['username']?.toString() ?? '',
-      'login_failed' =>
-        '${p['username'] ?? 'Unknown'} - ${p['failure_reason'] ?? ''}',
-      'process_start' => p['process_name']?.toString() ?? '',
-      'process_stop' =>
-        '${p['process_name'] ?? ''} (${p['duration_s'] ?? 0}s)',
-      'usb_connected' || 'usb_disconnected' =>
-        p['device_name']?.toString() ?? '',
-      'network_connected' =>
-        p['adapter_name']?.toString() ?? '',
-      'network_disconnected' =>
-        p['adapter_name']?.toString() ?? '',
-      'eventlog_entry' =>
-        '${p['source'] ?? ''}: ${p['message'] ?? ''}',
-      'file_access' =>
-        '${p['access_type'] ?? ''} ${p['file_path'] ?? ''}',
-      _ => '',
-    };
-  }
 }

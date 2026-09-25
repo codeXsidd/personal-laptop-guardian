@@ -1,8 +1,12 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 import '../../models/event.dart';
 import '../../models/event_type.dart';
+import 'event_list_screen.dart';
 
 void showEventDetail(BuildContext context, ActivityEvent event) {
   showModalBottomSheet(
@@ -28,7 +32,7 @@ class _EventDetailSheet extends StatelessWidget {
     final fmt = DateFormat('yyyy-MM-dd HH:mm:ss');
 
     return DraggableScrollableSheet(
-      initialChildSize: 0.5,
+      initialChildSize: 0.55,
       minChildSize: 0.3,
       maxChildSize: 0.85,
       expand: false,
@@ -48,6 +52,8 @@ class _EventDetailSheet extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 16),
+
+            // Header: icon + name + severity badge
             Row(
               children: [
                 Icon(EventTypes.icon(event.eventType),
@@ -73,41 +79,86 @@ class _EventDetailSheet extends StatelessWidget {
                 ),
               ],
             ),
+            const SizedBox(height: 4),
+
+            // Summary subtitle
+            Text(eventSubtitle(event),
+                style: theme.textTheme.bodyMedium
+                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
             const SizedBox(height: 8),
             Text(fmt.format(event.timestamp.toLocal()),
                 style: theme.textTheme.bodySmall
                     ?.copyWith(color: theme.colorScheme.outline)),
+
             const SizedBox(height: 16),
             const Divider(),
             const SizedBox(height: 8),
-            Text('Details',
+
+            // Metadata section
+            Text('Metadata',
                 style: theme.textTheme.titleSmall
                     ?.copyWith(fontWeight: FontWeight.w600)),
             const SizedBox(height: 8),
-            ...event.payload.entries.map((e) => Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SizedBox(
-                        width: 120,
-                        child: Text(_formatKey(e.key),
-                            style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                                fontWeight: FontWeight.w500)),
-                      ),
-                      Expanded(
-                        child: Text('${e.value}',
-                            style: theme.textTheme.bodySmall),
-                      ),
-                    ],
-                  ),
-                )),
+            _InfoRow('Event Type', event.eventType),
+            _InfoRow('Category',
+                EventTypes.category(event.eventType).name),
+            _InfoRow('Severity', event.severity),
+            _InfoRow('Timestamp', fmt.format(event.timestamp.toLocal())),
+            _InfoRow('Device ID', event.deviceId),
+
+            if (event.payload.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 8),
+              Text('Details',
+                  style: theme.textTheme.titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              ...event.payload.entries.map((e) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SizedBox(
+                          width: 120,
+                          child: Text(_formatKey(e.key),
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                  fontWeight: FontWeight.w500)),
+                        ),
+                        Expanded(
+                          child: Text(_formatValue(e.value),
+                              style: theme.textTheme.bodySmall),
+                        ),
+                      ],
+                    ),
+                  )),
+            ],
+
             const SizedBox(height: 16),
             const Divider(),
             const SizedBox(height: 8),
             _InfoRow('Event ID', event.id),
             _InfoRow('Synced at', fmt.format(event.syncedAt.toLocal())),
+            const SizedBox(height: 12),
+
+            // Copy Event ID button
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: event.id));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Event ID copied'),
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.copy, size: 16),
+                label: const Text('Copy Event ID'),
+              ),
+            ),
           ],
         );
       },
@@ -118,6 +169,18 @@ class _EventDetailSheet extends StatelessWidget {
     return key.replaceAll('_', ' ').replaceAllMapped(
         RegExp(r'(^|\s)\w'),
         (m) => m.group(0)!.toUpperCase());
+  }
+
+  String _formatValue(dynamic value) {
+    if (value == null) return 'N/A';
+    if (value is Map || value is List) {
+      try {
+        return const JsonEncoder.withIndent('  ').convert(value);
+      } catch (_) {
+        return value.toString();
+      }
+    }
+    return value.toString();
   }
 }
 
@@ -142,7 +205,7 @@ class _InfoRow extends StatelessWidget {
                     ?.copyWith(color: theme.colorScheme.outline)),
           ),
           Expanded(
-            child: Text(value,
+            child: SelectableText(value,
                 style: theme.textTheme.bodySmall),
           ),
         ],

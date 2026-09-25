@@ -114,7 +114,7 @@ cd mobile
 # Install dependencies
 flutter pub get
 
-# Run tests (16 tests)
+# Run tests (60 tests)
 flutter test
 
 # Static analysis
@@ -141,7 +141,7 @@ Supabase credentials are passed at build time via `--dart-define`. They are neve
 | Devices | List of paired devices with status |
 | Pair Device | Enter 6-character pairing code |
 | Dashboard | Device status, metrics, recent events, quick actions |
-| Activity Timeline | All events with infinite scroll and detail sheet |
+| Activity Timeline | Date-grouped events with filtering, pagination, detail sheet |
 | Login History | Session login/logout/lock/unlock events |
 | App History | Process start/stop events |
 | USB History | USB connect/disconnect events |
@@ -159,7 +159,8 @@ Supabase credentials are passed at build time via `--dart-define`. They are neve
 - [x] **Phase 4** -- Core Windows Monitors (complete, session/process/USB/network)
 - [x] **Phase 5** -- Advanced Windows Monitoring (complete, file audit/event log/system metrics)
 - [x] **Phase 6** -- Flutter Mobile App (complete, auth/pairing/dashboard/history/reports)
-- [ ] **Phase 7** -- Push Notifications
+- [x] **Phase 7** -- Event History Screens (complete, filtering/date-grouping/error-states/detail-enhancement)
+- [ ] **Phase 8** -- Push Notifications
 
 ## Documentation
 

@@ -51,8 +51,8 @@ lib/
     ├── dashboard/
     │   └── dashboard_screen.dart
     ├── events/
-    │   ├── event_list_screen.dart
-    │   ├── event_detail_sheet.dart
+    │   ├── event_list_screen.dart    # Reusable paginated event list
+    │   ├── event_detail_sheet.dart   # Event detail bottom sheet
     │   ├── login_history_screen.dart
     │   ├── process_history_screen.dart
     │   ├── usb_history_screen.dart
@@ -93,39 +93,90 @@ The anon key is safe to include (it's public and limited by RLS). The service ro
 4. App calls the `pair-device` edge function
 5. Device appears in the devices list with "online" status
 
-## Screens
-
-### Devices
-Lists all paired devices with status indicator (online/offline/pairing), machine name, and last-seen time. Pull-to-refresh. FAB to pair new device.
-
-### Dashboard
-Per-device view with:
-- Device header (name, status, OS version)
-- System metrics cards (CPU, memory, disk, battery) with progress indicators
-- Quick action grid for navigation
-- 24h event type breakdown pie chart
-- Recent activity timeline
+## Event History Screens
 
 ### Activity Timeline
-Generic paginated event list with infinite scroll. Supports filtering by event type (used by all specialized history screens). Tapping an event opens a bottom sheet with full payload details.
+
+The main event list screen (`EventListScreen`) provides:
+
+- **Date-grouped display**: events are grouped under "Today", "Yesterday", or named dates (e.g. "Monday, Sep 15")
+- **Pagination**: loads 50 events at a time with infinite scroll
+- **Pull-to-refresh**: swipe down to reload
+- **Filtering**: tap the filter icon to filter by:
+  - Minimum severity (info, low, medium, high, critical)
+  - Date range (calendar picker)
+- **Error state**: shows a retry button when network fails
+- **Empty state**: shows icon and message when no events match
 
 ### Specialized History Screens
-Each wraps EventListScreen with pre-configured filters:
-- **Login History**: session_login, session_logout, session_lock, session_unlock, login_failed
-- **App History**: process_start, process_stop
-- **USB History**: usb_connected, usb_disconnected
-- **Network History**: network_connected, network_disconnected, network_changed
-- **File Audit**: file_access
-- **Event Log**: eventlog_entry
 
-### Reports
+Each wraps `EventListScreen` with pre-configured type filters:
+
+| Screen | Event types | Title |
+|--------|------------|-------|
+| Login History | session_login, session_logout, session_lock, session_unlock, login_failed | Login / Session History |
+| App History | process_start, process_stop | Application History |
+| USB History | usb_connected, usb_disconnected | USB Device History |
+| Network History | network_connected, network_disconnected, network_changed | Network History |
+| File Audit | file_access | File Access Audit |
+| Event Log | eventlog_entry | Windows Event Log |
+
+All specialized screens inherit filtering, pagination, error/empty states, and date grouping from `EventListScreen`.
+
+### Event Detail
+
+Tapping any event opens a bottom sheet with:
+
+- Event type icon and human-readable name
+- Severity badge with color coding
+- Human-readable summary line
+- Formatted timestamp
+- **Metadata section**: event type, category, severity, timestamp, device ID
+- **Details section**: all structured payload key-value pairs, with nested JSON formatted for readability
+- Event ID and sync timestamp
+- Copy Event ID button
+
+### Supported Event Types
+
+| Type | Display Name | Category |
+|------|-------------|----------|
+| agent_started | Agent Started | System |
+| system_startup | System Startup | System |
+| system_shutdown | System Shutdown | System |
+| session_login | Login | Session |
+| session_logout | Logout | Session |
+| session_lock | Screen Lock | Session |
+| session_unlock | Screen Unlock | Session |
+| login_failed | Login Failed | Session |
+| process_start | App Started | Process |
+| process_stop | App Stopped | Process |
+| usb_connected | USB Connected | USB |
+| usb_disconnected | USB Disconnected | USB |
+| network_connected | Network Connected | Network |
+| network_disconnected | Network Disconnected | Network |
+| network_changed | Network Changed | Network |
+| eventlog_entry | Event Log | Event Log |
+| file_access | File Access | File |
+| system_metrics | System Metrics | System |
+
+### Pagination
+
+- Page size: 50 events
+- Infinite scroll triggers load when user reaches the bottom
+- Filtered queries use server-side `offset`/`limit` via Supabase `.range()`
+- Events are always ordered newest-first (`timestamp DESC`)
+
+### Authorization
+
+- All event queries include `device_id` filter scoped to the authenticated user's devices
+- Supabase RLS policies enforce that users can only read their own devices' events
+- The app never sends queries without a device ID
+- Device IDs come from the authenticated devices list, not from URL parameters alone
+
+## Reports
+
 - Line charts for CPU, memory, and battery over time (from heartbeat history)
 - Event summary table with counts per type (last 24 hours)
-
-### Settings
-- User profile display
-- Sign out with confirmation dialog
-- App version info
 
 ## Security
 
@@ -135,11 +186,12 @@ Each wraps EventListScreen with pre-configured filters:
 - No credentials are logged
 - After successful pairing, the device API key is not exposed
 - JWT tokens are managed by supabase_flutter (auto-refresh)
+- File audit events show metadata only — file contents are never collected or displayed
 
 ## Testing
 
 ```bash
-# Run 16 unit tests
+# Run all tests (60 tests)
 flutter test
 
 # Static analysis
@@ -147,17 +199,26 @@ flutter analyze
 ```
 
 Tests cover:
+
 - All model `fromJson` parsing (Device, ActivityEvent, Heartbeat, UserProfile, PairingResult)
-- Null/missing field handling
-- EventTypes display names, categories, severity colors
-- Edge cases (empty payloads, unknown types)
+- Null/missing field handling and defaults
+- EventTypes display names, icons, categories, severity colors
+- All type group lists (session, process, USB, network)
+- All 8 event history screens: rendering, empty state
+- Dashboard: data rendering, null heartbeat state, Quick Actions
+- Reports: data rendering, empty data state
+- Timeline: date grouping, error state, filter UI
+- Event detail: subtitle formatting for all event types
+- EventTile: rendering, tap-to-open detail
+- EventFilter: equality including eventTypes list
+- Error state with retry button
 
 ## Manual Test Procedure
 
 1. Build and install the debug APK:
    ```bash
    flutter build apk --debug \
-     --dart-define=SUPABASE_URL=https://pfeubiedbwvjnlpiofmd.supabase.co \
+     --dart-define=SUPABASE_URL=https://your-project.supabase.co \
      --dart-define=SUPABASE_ANON_KEY=<your-anon-key>
    adb install build/app/outputs/flutter-apk/app-debug.apk
    ```
@@ -172,8 +233,19 @@ Tests cover:
 4. Verify:
    - Device appears in the devices list with "online" status
    - Dashboard shows system metrics (CPU, memory, disk, battery)
-   - Activity timeline shows recent events
+   - Activity timeline shows recent events grouped by date
+   - Filtering by severity and date range works
    - Each history screen filters correctly
+   - Tapping an event opens the detail sheet with metadata
    - Reports show metric charts
    - Pull-to-refresh works on all screens
+   - Error state shows when offline with retry button
    - Sign out and sign in again — data persists
+
+## Troubleshooting
+
+- **Empty event screens**: Verify the Windows agent is running and syncing. Check the agent console for sync errors.
+- **No heartbeat data**: The agent sends heartbeats every 60 seconds. Wait for at least one heartbeat after pairing.
+- **Login fails**: Ensure the email is confirmed. Check Supabase Auth logs.
+- **Events not updating**: Pull-to-refresh forces a reload. Events are cached by Riverpod providers until invalidated.
+- **Filters show no results**: Clear filters using the "Clear filters" button or the crossed-out filter icon in the app bar.

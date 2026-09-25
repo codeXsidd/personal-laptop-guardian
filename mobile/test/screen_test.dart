@@ -64,13 +64,13 @@ List<Heartbeat> _testHeartbeats() => List.generate(
       ),
     );
 
-List<ActivityEvent> _testEvents(String type) => List.generate(
-      5,
+List<ActivityEvent> _testEvents(String type, {int count = 5}) => List.generate(
+      count,
       (i) => ActivityEvent(
         id: 'evt-$type-$i',
         deviceId: _deviceId,
         eventType: type,
-        severity: 'info',
+        severity: i == 0 ? 'high' : 'info',
         timestamp: _now.subtract(Duration(hours: i)),
         payload: _payloadForType(type, i),
         syncedAt: _now,
@@ -80,11 +80,29 @@ List<ActivityEvent> _testEvents(String type) => List.generate(
 Map<String, dynamic> _payloadForType(String type, int i) {
   return switch (type) {
     'session_login' || 'session_logout' => {'username': 'TestUser'},
-    'process_start' || 'process_stop' => {'process_name': 'notepad.exe'},
+    'process_start' => {'process_name': 'notepad.exe', 'pid': 1234 + i},
+    'process_stop' => {
+      'process_name': 'notepad.exe',
+      'pid': 1234 + i,
+      'duration_s': 120 + i * 10
+    },
     'usb_connected' || 'usb_disconnected' => {'device_name': 'USB Drive $i'},
-    'network_connected' => {'adapter_name': 'Wi-Fi'},
-    'eventlog_entry' => {'source': 'System', 'message': 'Test event $i'},
-    'file_access' => {'access_type': 'read', 'file_path': 'C:\\test$i.txt'},
+    'network_connected' => {
+      'adapter_name': 'Wi-Fi',
+      'ip_address': '192.168.1.$i'
+    },
+    'eventlog_entry' => {
+      'source': 'System',
+      'message': 'Test event $i',
+      'level': 'Information',
+      'event_id': 100 + i,
+      'channel': 'System'
+    },
+    'file_access' => {
+      'access_type': 'read',
+      'file_path': 'C:\\test$i.txt',
+      'user': 'TestUser'
+    },
     _ => {},
   };
 }
@@ -121,6 +139,21 @@ MockEventService _buildMockService(List<ActivityEvent> events) {
   return mock;
 }
 
+MockEventService _buildFailingMockService() {
+  final mock = MockEventService();
+  when(() => mock.getEvents(
+        any(),
+        limit: any(named: 'limit'),
+        offset: any(named: 'offset'),
+        eventType: any(named: 'eventType'),
+        eventTypes: any(named: 'eventTypes'),
+        minSeverity: any(named: 'minSeverity'),
+        after: any(named: 'after'),
+        before: any(named: 'before'),
+      )).thenThrow(Exception('Network error'));
+  return mock;
+}
+
 void main() {
   setUpAll(() {
     registerFallbackValue(DateTime.now());
@@ -150,7 +183,6 @@ void main() {
       expect(find.text('95.0%'), findsOneWidget);
       expect(find.byType(ErrorWidget), findsNothing);
 
-      // Scroll down to reveal Quick Actions (may be off-screen)
       await tester.drag(find.byType(ListView), const Offset(0, -300));
       await tester.pumpAndSettle();
       expect(find.text('Quick Actions'), findsOneWidget);
@@ -191,7 +223,18 @@ void main() {
       expect(find.byType(ErrorWidget), findsNothing);
     });
 
-    testWidgets('shows empty state', (tester) async {
+    testWidgets('groups events by date', (tester) async {
+      final mock = _buildMockService(_testEvents('session_login'));
+      await tester.pumpWidget(_wrapScreen(
+        const EventListScreen(deviceId: _deviceId),
+        overrides: [eventServiceProvider.overrideWithValue(mock)],
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Today'), findsOneWidget);
+    });
+
+    testWidgets('shows empty state with icon', (tester) async {
       final mock = _buildMockService([]);
       await tester.pumpWidget(_wrapScreen(
         const EventListScreen(deviceId: _deviceId),
@@ -200,7 +243,50 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('No events found.'), findsOneWidget);
+      expect(find.byIcon(Icons.event_busy), findsOneWidget);
       expect(find.byType(ErrorWidget), findsNothing);
+    });
+
+    testWidgets('shows error state with retry', (tester) async {
+      final mock = _buildFailingMockService();
+      await tester.pumpWidget(_wrapScreen(
+        const EventListScreen(deviceId: _deviceId),
+        overrides: [eventServiceProvider.overrideWithValue(mock)],
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Failed to load events. Tap to retry.'), findsOneWidget);
+      expect(find.byIcon(Icons.cloud_off), findsOneWidget);
+      expect(find.text('Retry'), findsOneWidget);
+    });
+
+    testWidgets('has filter button in app bar', (tester) async {
+      final mock = _buildMockService(_testEvents('session_login'));
+      await tester.pumpWidget(_wrapScreen(
+        const EventListScreen(deviceId: _deviceId),
+        overrides: [eventServiceProvider.overrideWithValue(mock)],
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.byIcon(Icons.filter_list), findsOneWidget);
+    });
+
+    testWidgets('opens filter sheet', (tester) async {
+      final mock = _buildMockService(_testEvents('session_login'));
+      await tester.pumpWidget(_wrapScreen(
+        const EventListScreen(deviceId: _deviceId),
+        overrides: [eventServiceProvider.overrideWithValue(mock)],
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.filter_list));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Filters'), findsOneWidget);
+      expect(find.text('Minimum severity'), findsOneWidget);
+      expect(find.text('Date range'), findsOneWidget);
+      expect(find.text('Apply'), findsOneWidget);
+      expect(find.text('Clear all'), findsOneWidget);
     });
   });
 
@@ -386,6 +472,166 @@ void main() {
       expect(find.text('Reports'), findsOneWidget);
       expect(find.text('No heartbeat data available.'), findsOneWidget);
       expect(find.byType(ErrorWidget), findsNothing);
+    });
+  });
+
+  group('Event detail', () {
+    testWidgets('eventSubtitle returns correct text for each event type',
+        (tester) async {
+      expect(
+          eventSubtitle(ActivityEvent(
+            id: '1',
+            deviceId: _deviceId,
+            eventType: 'session_login',
+            severity: 'info',
+            timestamp: _now,
+            payload: {'username': 'Admin'},
+            syncedAt: _now,
+          )),
+          'Admin');
+
+      expect(
+          eventSubtitle(ActivityEvent(
+            id: '2',
+            deviceId: _deviceId,
+            eventType: 'process_start',
+            severity: 'info',
+            timestamp: _now,
+            payload: {'process_name': 'chrome.exe', 'pid': 5678},
+            syncedAt: _now,
+          )),
+          'chrome.exe (PID 5678)');
+
+      expect(
+          eventSubtitle(ActivityEvent(
+            id: '3',
+            deviceId: _deviceId,
+            eventType: 'usb_connected',
+            severity: 'info',
+            timestamp: _now,
+            payload: {'device_name': 'SanDisk USB'},
+            syncedAt: _now,
+          )),
+          'SanDisk USB');
+
+      expect(
+          eventSubtitle(ActivityEvent(
+            id: '4',
+            deviceId: _deviceId,
+            eventType: 'network_connected',
+            severity: 'info',
+            timestamp: _now,
+            payload: {'adapter_name': 'Ethernet', 'ip_address': '10.0.0.1'},
+            syncedAt: _now,
+          )),
+          'Ethernet 10.0.0.1');
+
+      expect(
+          eventSubtitle(ActivityEvent(
+            id: '5',
+            deviceId: _deviceId,
+            eventType: 'file_access',
+            severity: 'info',
+            timestamp: _now,
+            payload: {'access_type': 'write', 'file_path': 'C:\\data.txt'},
+            syncedAt: _now,
+          )),
+          'write C:\\data.txt');
+
+      expect(
+          eventSubtitle(ActivityEvent(
+            id: '6',
+            deviceId: _deviceId,
+            eventType: 'eventlog_entry',
+            severity: 'medium',
+            timestamp: _now,
+            payload: {
+              'level': 'Warning',
+              'source': 'Kernel',
+              'message': 'Disk slow'
+            },
+            syncedAt: _now,
+          )),
+          '[Warning] Kernel: Disk slow');
+    });
+  });
+
+  group('EventFilter equality', () {
+    test('same fields are equal', () {
+      final a = EventFilter(deviceId: 'd1', eventType: 'usb_connected');
+      final b = EventFilter(deviceId: 'd1', eventType: 'usb_connected');
+      expect(a, equals(b));
+      expect(a.hashCode, equals(b.hashCode));
+    });
+
+    test('different eventTypes are not equal', () {
+      final a = EventFilter(
+          deviceId: 'd1', eventTypes: ['session_login', 'session_logout']);
+      final b = EventFilter(
+          deviceId: 'd1', eventTypes: ['process_start', 'process_stop']);
+      expect(a, isNot(equals(b)));
+    });
+
+    test('null vs non-null eventTypes are not equal', () {
+      final a = EventFilter(deviceId: 'd1');
+      final b = EventFilter(
+          deviceId: 'd1', eventTypes: ['session_login']);
+      expect(a, isNot(equals(b)));
+    });
+
+    test('same eventTypes lists are equal', () {
+      final a = EventFilter(
+          deviceId: 'd1', eventTypes: ['a', 'b']);
+      final b = EventFilter(
+          deviceId: 'd1', eventTypes: ['a', 'b']);
+      expect(a, equals(b));
+      expect(a.hashCode, equals(b.hashCode));
+    });
+  });
+
+  group('EventTile widget', () {
+    testWidgets('renders event data correctly', (tester) async {
+      final event = ActivityEvent(
+        id: 'evt-1',
+        deviceId: _deviceId,
+        eventType: 'session_login',
+        severity: 'high',
+        timestamp: _now,
+        payload: {'username': 'Admin'},
+        syncedAt: _now,
+      );
+
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(body: EventTile(event: event)),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Login'), findsOneWidget);
+      expect(find.text('Admin'), findsOneWidget);
+      expect(find.text('HIGH'), findsOneWidget);
+    });
+
+    testWidgets('opens detail sheet on tap', (tester) async {
+      final event = ActivityEvent(
+        id: 'evt-1',
+        deviceId: _deviceId,
+        eventType: 'process_start',
+        severity: 'info',
+        timestamp: _now,
+        payload: {'process_name': 'notepad.exe', 'pid': 1234},
+        syncedAt: _now,
+      );
+
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(body: EventTile(event: event)),
+      ));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(EventTile));
+      await tester.pumpAndSettle();
+
+      expect(find.text('App Started'), findsWidgets);
+      expect(find.text('Metadata'), findsOneWidget);
+      expect(find.text('Event Type'), findsOneWidget);
     });
   });
 }

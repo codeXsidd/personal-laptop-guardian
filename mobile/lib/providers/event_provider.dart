@@ -29,11 +29,23 @@ class EventFilter {
       other is EventFilter &&
           deviceId == other.deviceId &&
           eventType == other.eventType &&
+          _listEquals(eventTypes, other.eventTypes) &&
           limit == other.limit &&
           offset == other.offset;
 
   @override
-  int get hashCode => Object.hash(deviceId, eventType, limit, offset);
+  int get hashCode =>
+      Object.hash(deviceId, eventType, Object.hashAll(eventTypes ?? []), limit, offset);
+
+  static bool _listEquals(List<String>? a, List<String>? b) {
+    if (identical(a, b)) return true;
+    if (a == null || b == null) return a == b;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
 }
 
 final eventsProvider =
