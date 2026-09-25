@@ -132,6 +132,31 @@ Deno.serve(async (req) => {
     .update({ last_seen_at: new Date().toISOString(), status: "online" })
     .eq("id", device.id);
 
+  // Trigger notifications for newly inserted high-priority events
+  if (insertedCount > 0) {
+    const insertedIds = new Set((inserted ?? []).map((r: { id: string }) => r.id));
+    const notifyEvents = body.events.filter((e) => insertedIds.has(e.id));
+    if (notifyEvents.length > 0) {
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      try {
+        await fetch(`${supabaseUrl}/functions/v1/send-notification`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${serviceKey}`,
+          },
+          body: JSON.stringify({
+            device_id: device.id,
+            events: notifyEvents,
+          }),
+        });
+      } catch (e) {
+        console.error("Failed to trigger notifications:", e);
+      }
+    }
+  }
+
   return jsonResponse({
     inserted: insertedCount,
     duplicates: duplicateCount,

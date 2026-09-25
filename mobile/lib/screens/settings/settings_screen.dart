@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../providers/auth_provider.dart';
+import '../../providers/device_provider.dart';
+import '../../providers/notification_provider.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -61,6 +63,8 @@ class SettingsScreen extends ConsumerWidget {
             },
           ),
           const SizedBox(height: 16),
+          _buildNotificationsCard(context, ref),
+          const SizedBox(height: 16),
           Card(
             child: Column(
               children: [
@@ -94,6 +98,9 @@ class SettingsScreen extends ConsumerWidget {
                       ),
                     );
                     if (confirm == true && context.mounted) {
+                      try {
+                        await ref.read(notificationServiceProvider).unregisterCurrentToken();
+                      } catch (_) {}
                       await ref.read(authServiceProvider).signOut();
                       if (context.mounted) context.go('/login');
                     }
@@ -104,6 +111,33 @@ class SettingsScreen extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildNotificationsCard(BuildContext context, WidgetRef ref) {
+    final devicesAsync = ref.watch(devicesProvider);
+    return devicesAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
+      data: (devices) {
+        if (devices.isEmpty) return const SizedBox.shrink();
+        return Card(
+          child: Column(
+            children: [
+              for (var i = 0; i < devices.length; i++) ...[
+                if (i > 0) const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.notifications_outlined),
+                  title: Text('Notifications — ${devices[i].displayName}'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.go(
+                      '/settings/notifications/${devices[i].id}'),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
     );
   }
 }

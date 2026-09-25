@@ -16,6 +16,7 @@ import '../screens/events/process_history_screen.dart';
 import '../screens/events/usb_history_screen.dart';
 import '../screens/pairing/pair_device_screen.dart';
 import '../screens/reports/reports_screen.dart';
+import '../screens/settings/notification_settings_screen.dart';
 import '../screens/settings/settings_screen.dart';
 import '../screens/shell.dart';
 
@@ -143,6 +144,12 @@ GoRouter buildRouter() {
           GoRoute(
             path: '/settings',
             builder: (context, state) => const SettingsScreen(),
+          ),
+          GoRoute(
+            path: '/settings/notifications/:deviceId',
+            builder: (context, state) => NotificationSettingsScreen(
+              deviceId: state.pathParameters['deviceId']!,
+            ),
           ),
         ],
       ),

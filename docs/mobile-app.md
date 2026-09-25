@@ -10,6 +10,8 @@ The Flutter Android app provides a dashboard for monitoring paired Windows lapto
 - Riverpod for state management
 - go_router for navigation
 - supabase_flutter for backend integration
+- firebase_core + firebase_messaging for FCM push notifications
+- flutter_local_notifications for foreground notification display
 - fl_chart for data visualization
 - Material 3 design system
 
@@ -17,8 +19,9 @@ The Flutter Android app provides a dashboard for monitoring paired Windows lapto
 
 ```
 lib/
-├── main.dart                    # Entry point, Supabase init
-├── app.dart                     # MaterialApp.router with theme
+├── main.dart                    # Entry point, Firebase + Supabase init
+├── app.dart                     # MaterialApp.router, notification nav
+├── firebase_options.dart        # FlutterFire CLI-generated config
 ├── config/
 │   ├── supabase_config.dart     # Compile-time env vars (--dart-define)
 │   ├── theme.dart               # Material 3 light/dark themes
@@ -28,16 +31,20 @@ lib/
 │   ├── event.dart
 │   ├── event_type.dart
 │   ├── heartbeat.dart
+│   ├── notification_settings.dart
+│   ├── notification_token.dart
 │   └── user_profile.dart
 ├── services/                    # Supabase API calls
 │   ├── auth_service.dart
 │   ├── device_service.dart
 │   ├── event_service.dart
+│   ├── notification_service.dart
 │   └── pairing_service.dart
 ├── providers/                   # Riverpod state providers
 │   ├── auth_provider.dart
 │   ├── device_provider.dart
 │   ├── event_provider.dart
+│   ├── notification_provider.dart
 │   └── pairing_provider.dart
 └── screens/
     ├── shell.dart               # Bottom navigation shell
@@ -62,6 +69,7 @@ lib/
     ├── reports/
     │   └── reports_screen.dart
     └── settings/
+        ├── notification_settings_screen.dart
         └── settings_screen.dart
 ```
 
@@ -173,6 +181,66 @@ Tapping any event opens a bottom sheet with:
 - The app never sends queries without a device ID
 - Device IDs come from the authenticated devices list, not from URL parameters alone
 
+## Push Notifications
+
+### Overview
+
+The app receives push notifications via Firebase Cloud Messaging (FCM) when qualifying events occur on paired devices. The notification flow is:
+
+1. Windows Agent detects an event and syncs it to Supabase via `ingest-events`
+2. `ingest-events` calls `send-notification` Edge Function for newly inserted events
+3. `send-notification` checks the user's notification settings (event type + severity threshold)
+4. If the event qualifies, FCM HTTP v1 API sends a push notification to all registered tokens
+5. The mobile app receives and displays the notification
+
+### Android Notification Channels
+
+| Channel | ID | Importance | Used For |
+|---------|-----|-----------|----------|
+| Security / High Severity | `security_alerts` | High | Critical and high severity events |
+| General Activity | `general_activity` | Default | Normal severity events |
+
+### FCM Token Lifecycle
+
+- Token is retrieved and registered in Supabase `notification_tokens` on app start (if authenticated)
+- Token refresh is listened to and re-registered automatically
+- On sign out, the current token is unregistered from Supabase
+- Invalid tokens are cleaned up server-side when FCM returns 404/not-found
+
+### Notification Settings
+
+Each device has per-event-type notification settings organized by category:
+
+| Category | Event Types | Default Min Severity |
+|----------|------------|---------------------|
+| Security | login_failed | high |
+| Session | session_login, session_logout, session_lock, session_unlock | high |
+| USB | usb_connected, usb_disconnected | info |
+| Network | network_connected, network_disconnected, network_changed | high |
+| Process | process_start, process_stop | high |
+| File | file_access | high |
+
+Users can toggle categories on/off and adjust severity thresholds in Settings > Notifications.
+
+### Notification Handling by App State
+
+| State | Behavior |
+|-------|----------|
+| Foreground | `flutter_local_notifications` displays the notification with the correct channel |
+| Background | System notification tray shows the notification from FCM |
+| Terminated | System notification tray; on tap, app opens and navigates to device dashboard |
+
+### Deep Linking
+
+Tapping a notification navigates to `/dashboard/{deviceId}`. The event ID is stored in `pendingNotificationPayloadProvider` for potential future use (e.g., scrolling to the specific event).
+
+### Security
+
+- Firebase server credentials (service account key) are stored as a Supabase Edge Function secret — never in the Flutter app
+- `send-notification` is authenticated via `x-internal-key` (the Supabase service role key) — only callable by other Edge Functions
+- FCM tokens are stored with RLS enabled — users can only read/write their own tokens
+- Notification settings have RLS — users can only manage settings for their own devices
+
 ## Reports
 
 - Line charts for CPU, memory, and battery over time (from heartbeat history)
@@ -181,17 +249,21 @@ Tapping any event opens a bottom sheet with:
 ## Security
 
 - Service role key is never in the Flutter app
+- Firebase Admin / service account credentials are never in the Flutter app
 - Supabase anon key is public (limited by RLS)
 - Credentials are compile-time constants via `--dart-define`
 - No credentials are logged
+- FCM tokens are not logged unnecessarily
 - After successful pairing, the device API key is not exposed
 - JWT tokens are managed by supabase_flutter (auto-refresh)
 - File audit events show metadata only — file contents are never collected or displayed
+- `send-notification` Edge Function only targets devices owned by the authenticated user
+- FCM token cleanup on sign out prevents stale notification delivery
 
 ## Testing
 
 ```bash
-# Run all tests (60 tests)
+# Run all tests (73 tests)
 flutter test
 
 # Static analysis
@@ -200,7 +272,7 @@ flutter analyze
 
 Tests cover:
 
-- All model `fromJson` parsing (Device, ActivityEvent, Heartbeat, UserProfile, PairingResult)
+- All model `fromJson` parsing (Device, ActivityEvent, Heartbeat, UserProfile, PairingResult, NotificationToken, NotificationSetting)
 - Null/missing field handling and defaults
 - EventTypes display names, icons, categories, severity colors
 - All type group lists (session, process, USB, network)
@@ -212,6 +284,8 @@ Tests cover:
 - EventTile: rendering, tap-to-open detail
 - EventFilter: equality including eventTypes list
 - Error state with retry button
+- NotificationToken model: fromJson, null device_label, toInsertJson with/without device_label
+- NotificationSetting model: fromJson, defaults, category coverage for all 6 categories
 
 ## Manual Test Procedure
 
@@ -249,3 +323,5 @@ Tests cover:
 - **Login fails**: Ensure the email is confirmed. Check Supabase Auth logs.
 - **Events not updating**: Pull-to-refresh forces a reload. Events are cached by Riverpod providers until invalidated.
 - **Filters show no results**: Clear filters using the "Clear filters" button or the crossed-out filter icon in the app bar.
+- **No notifications**: Check that notification permission is granted in Android settings. Verify the FCM token is registered in `notification_tokens` table. Ensure notification settings are enabled for the event type and severity threshold.
+- **Notifications stop after sign out/sign in**: On sign in, a new FCM token is automatically registered. Old tokens from the same device are deduplicated via the `user_id,fcm_token` unique constraint.

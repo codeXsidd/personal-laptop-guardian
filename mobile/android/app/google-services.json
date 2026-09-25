@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "312656054317",
+    "project_id": "personal-laptop-guardian",
+    "storage_bucket": "personal-laptop-guardian.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:312656054317:android:cf3cf00281e1a0bd39d0a4",
+        "android_client_info": {
+          "package_name": "com.laptopguardian.laptop_guardian"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDV7SauYXyzhbLAV940-m8-yiBLFdgpZVU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

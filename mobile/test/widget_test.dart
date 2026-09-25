@@ -7,6 +7,8 @@ import 'package:laptop_guardian/models/device.dart';
 import 'package:laptop_guardian/models/event.dart';
 import 'package:laptop_guardian/models/event_type.dart';
 import 'package:laptop_guardian/models/heartbeat.dart';
+import 'package:laptop_guardian/models/notification_settings.dart';
+import 'package:laptop_guardian/models/notification_token.dart';
 import 'package:laptop_guardian/models/user_profile.dart';
 import 'package:laptop_guardian/providers/auth_provider.dart';
 import 'package:laptop_guardian/services/auth_service.dart';
@@ -364,6 +366,147 @@ void main() {
         'synced_at': '2025-01-01T00:00:01Z',
       });
       expect(event.severity, 'info');
+    });
+  });
+
+  group('NotificationToken model', () {
+    test('fromJson parses correctly', () {
+      final json = {
+        'id': 'nt-1',
+        'user_id': 'user-1',
+        'fcm_token': 'fake-fcm-token-abc123',
+        'device_label': 'android',
+        'created_at': '2026-09-20T10:00:00.000Z',
+        'updated_at': '2026-09-20T10:00:00.000Z',
+      };
+      final token = NotificationToken.fromJson(json);
+      expect(token.id, 'nt-1');
+      expect(token.userId, 'user-1');
+      expect(token.fcmToken, 'fake-fcm-token-abc123');
+      expect(token.deviceLabel, 'android');
+    });
+
+    test('fromJson handles null device_label', () {
+      final json = {
+        'id': 'nt-2',
+        'user_id': 'user-1',
+        'fcm_token': 'token-xyz',
+        'device_label': null,
+        'created_at': '2026-09-20T10:00:00.000Z',
+        'updated_at': '2026-09-20T10:00:00.000Z',
+      };
+      final token = NotificationToken.fromJson(json);
+      expect(token.deviceLabel, isNull);
+    });
+
+    test('toInsertJson includes fcm_token', () {
+      final token = NotificationToken(
+        id: 'nt-1',
+        userId: 'user-1',
+        fcmToken: 'token-123',
+        deviceLabel: 'android',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+      final json = token.toInsertJson();
+      expect(json['fcm_token'], 'token-123');
+      expect(json['device_label'], 'android');
+      expect(json.containsKey('id'), false);
+      expect(json.containsKey('user_id'), false);
+    });
+
+    test('toInsertJson omits null device_label', () {
+      final token = NotificationToken(
+        id: 'nt-1',
+        userId: 'user-1',
+        fcmToken: 'token-123',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+      final json = token.toInsertJson();
+      expect(json.containsKey('device_label'), false);
+    });
+  });
+
+  group('NotificationSetting model', () {
+    test('fromJson parses correctly', () {
+      final json = {
+        'id': 'ns-1',
+        'user_id': 'user-1',
+        'device_id': 'dev-1',
+        'event_type': 'login_failed',
+        'min_severity': 'high',
+        'enabled': true,
+        'created_at': '2026-09-20T10:00:00.000Z',
+        'updated_at': '2026-09-20T10:00:00.000Z',
+      };
+      final setting = NotificationSetting.fromJson(json);
+      expect(setting.id, 'ns-1');
+      expect(setting.deviceId, 'dev-1');
+      expect(setting.eventType, 'login_failed');
+      expect(setting.minSeverity, 'high');
+      expect(setting.enabled, true);
+    });
+
+    test('fromJson defaults for missing fields', () {
+      final json = {
+        'id': 'ns-2',
+        'user_id': 'user-1',
+        'device_id': 'dev-1',
+        'event_type': 'usb_connected',
+        'created_at': '2026-09-20T10:00:00.000Z',
+        'updated_at': '2026-09-20T10:00:00.000Z',
+      };
+      final setting = NotificationSetting.fromJson(json);
+      expect(setting.minSeverity, 'high');
+      expect(setting.enabled, true);
+    });
+
+    test('categories contains all required keys', () {
+      expect(NotificationSetting.categories, contains('security'));
+      expect(NotificationSetting.categories, contains('session'));
+      expect(NotificationSetting.categories, contains('usb'));
+      expect(NotificationSetting.categories, contains('network'));
+      expect(NotificationSetting.categories, contains('process'));
+      expect(NotificationSetting.categories, contains('file'));
+    });
+
+    test('security category covers login_failed', () {
+      final security = NotificationSetting.categories['security']!;
+      expect(security.eventTypes, contains('login_failed'));
+      expect(security.defaultMinSeverity, 'high');
+    });
+
+    test('session category covers session types', () {
+      final session = NotificationSetting.categories['session']!;
+      expect(session.eventTypes, contains('session_login'));
+      expect(session.eventTypes, contains('session_logout'));
+      expect(session.eventTypes, contains('session_lock'));
+      expect(session.eventTypes, contains('session_unlock'));
+    });
+
+    test('usb category covers usb types', () {
+      final usb = NotificationSetting.categories['usb']!;
+      expect(usb.eventTypes, contains('usb_connected'));
+      expect(usb.eventTypes, contains('usb_disconnected'));
+    });
+
+    test('network category covers network types', () {
+      final network = NotificationSetting.categories['network']!;
+      expect(network.eventTypes, contains('network_connected'));
+      expect(network.eventTypes, contains('network_disconnected'));
+      expect(network.eventTypes, contains('network_changed'));
+    });
+
+    test('process category covers process types', () {
+      final process = NotificationSetting.categories['process']!;
+      expect(process.eventTypes, contains('process_start'));
+      expect(process.eventTypes, contains('process_stop'));
+    });
+
+    test('file category covers file_access', () {
+      final file = NotificationSetting.categories['file']!;
+      expect(file.eventTypes, contains('file_access'));
     });
   });
 }

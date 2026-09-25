@@ -1,3 +1,4 @@
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'config/routes.dart';
 import 'config/theme.dart';
 import 'providers/auth_provider.dart';
+import 'providers/notification_provider.dart';
 
 class LaptopGuardianApp extends ConsumerStatefulWidget {
   const LaptopGuardianApp({super.key});
@@ -16,6 +18,7 @@ class LaptopGuardianApp extends ConsumerStatefulWidget {
 
 class _LaptopGuardianAppState extends ConsumerState<LaptopGuardianApp> {
   GoRouter? _router;
+  bool _notificationsInitialized = false;
 
   @override
   void dispose() {
@@ -23,12 +26,46 @@ class _LaptopGuardianAppState extends ConsumerState<LaptopGuardianApp> {
     super.dispose();
   }
 
+  void _initNotifications() {
+    if (_notificationsInitialized) return;
+    _notificationsInitialized = true;
+
+    ref.read(notificationInitProvider);
+
+    ref.read(notificationServiceProvider).onNotificationTap = (payload) {
+      final parts = payload.split(':');
+      if (parts.length >= 2 && _router != null) {
+        final deviceId = parts[0];
+        ref.read(pendingNotificationPayloadProvider.notifier).state = payload;
+        _router!.go('/dashboard/$deviceId');
+      }
+    };
+
+    FirebaseMessaging.instance.getInitialMessage().then((message) {
+      if (message != null) _handleNotificationNavigation(message.data);
+    });
+
+    FirebaseMessaging.onMessageOpenedApp.listen((message) {
+      _handleNotificationNavigation(message.data);
+    });
+  }
+
+  void _handleNotificationNavigation(Map<String, dynamic> data) {
+    final deviceId = data['device_id'] as String?;
+    final eventId = data['event_id'] as String?;
+    if (deviceId == null || _router == null) return;
+
+    if (eventId != null) {
+      ref.read(pendingNotificationPayloadProvider.notifier).state =
+          '$deviceId:$eventId';
+    }
+    _router!.go('/dashboard/$deviceId');
+  }
+
   @override
   Widget build(BuildContext context) {
     final init = ref.watch(supabaseInitProvider);
 
-    // When auth state changes to signedIn from a deep link (not from the
-    // login form), navigate to the verification-success screen.
     ref.listen<AsyncValue<AuthState>>(authStateProvider, (prev, next) {
       next.whenData((authState) {
         if (authState.event == AuthChangeEvent.signedIn) {
@@ -82,6 +119,7 @@ class _LaptopGuardianAppState extends ConsumerState<LaptopGuardianApp> {
       ),
       data: (_) {
         _router ??= buildRouter();
+        _initNotifications();
         return MaterialApp.router(
           title: 'Laptop Guardian',
           theme: AppTheme.light(),

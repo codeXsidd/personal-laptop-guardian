@@ -93,6 +93,7 @@ supabase functions serve
 | `pair-device` | JWT | Mobile app claims a pairing code, links device to user |
 | `ingest-events` | API Key | Agent uploads event batches (max 100, idempotent) |
 | `heartbeat` | API Key | Agent sends liveness signal + system metrics |
+| `send-notification` | Internal Key | Sends FCM push notifications for qualifying events |
 
 ### Database
 
@@ -114,7 +115,7 @@ cd mobile
 # Install dependencies
 flutter pub get
 
-# Run tests (60 tests)
+# Run tests (73 tests)
 flutter test
 
 # Static analysis
@@ -149,7 +150,8 @@ Supabase credentials are passed at build time via `--dart-define`. They are neve
 | File Audit | File access audit events |
 | Windows Event Log | System/Application event log entries |
 | Reports | CPU/memory/battery charts, event breakdown |
-| Settings | User profile, sign out |
+| Notification Settings | Per-device notification category toggles and severity thresholds |
+| Settings | User profile, notifications, sign out |
 
 ## Implementation Status
 
@@ -160,7 +162,7 @@ Supabase credentials are passed at build time via `--dart-define`. They are neve
 - [x] **Phase 5** -- Advanced Windows Monitoring (complete, file audit/event log/system metrics)
 - [x] **Phase 6** -- Flutter Mobile App (complete, auth/pairing/dashboard/history/reports)
 - [x] **Phase 7** -- Event History Screens (complete, filtering/date-grouping/error-states/detail-enhancement)
-- [ ] **Phase 8** -- Push Notifications
+- [x] **Phase 8** -- Push Notifications (complete, FCM/Edge Function/notification settings/channels)
 
 ## Documentation
 

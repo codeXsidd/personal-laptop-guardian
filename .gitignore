@@ -1,5 +1,10 @@
 # Environment variables
 .env
+.env.*
+
+# Firebase / secrets
+firebase-sa-key.json
+*-service-account*.json
 
 # .NET / C#
 windows-agent/**/bin/
