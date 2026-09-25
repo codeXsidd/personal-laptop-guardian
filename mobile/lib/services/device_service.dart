@@ -56,10 +56,4 @@ class DeviceService {
     if (data == null) return null;
     return Heartbeat.fromJson(data);
   }
-
-  Stream<List<Map<String, dynamic>>> watchDevices(String userId) {
-    return _client
-        .from('devices')
-        .stream(primaryKey: ['id']).eq('user_id', userId);
-  }
 }

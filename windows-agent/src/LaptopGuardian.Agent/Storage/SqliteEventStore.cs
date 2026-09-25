@@ -36,36 +36,95 @@ public sealed class SqliteEventStore : IEventStore, IDisposable
     {
         _logger.LogInformation("Initializing SQLite event store");
 
-        await using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
-
-        // Enable WAL mode for concurrent read/write
-        await using (var walCmd = connection.CreateCommand())
+        try
         {
-            walCmd.CommandText = "PRAGMA journal_mode=WAL;";
-            await walCmd.ExecuteNonQueryAsync(cancellationToken);
+            await using var connection = new SqliteConnection(_connectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            // Enable WAL mode for concurrent read/write
+            await using (var walCmd = connection.CreateCommand())
+            {
+                walCmd.CommandText = "PRAGMA journal_mode=WAL;";
+                await walCmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            // Set busy timeout to prevent "database is locked" errors
+            await using (var busyCmd = connection.CreateCommand())
+            {
+                busyCmd.CommandText = "PRAGMA busy_timeout=5000;";
+                await busyCmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                CREATE TABLE IF NOT EXISTS events (
+                    id TEXT PRIMARY KEY,
+                    event_type TEXT NOT NULL,
+                    severity TEXT NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    payload_json TEXT NOT NULL DEFAULT '{}',
+                    sync_status TEXT NOT NULL DEFAULT 'pending',
+                    retry_count INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    synced_at TEXT
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_events_sync_status ON events (sync_status);
+                CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events (timestamp DESC);
+                """;
+            await command.ExecuteNonQueryAsync(cancellationToken);
+
+            _logger.LogInformation("SQLite event store initialized");
         }
+        catch (SqliteException ex)
+        {
+            _logger.LogError(ex, "SQLite database corrupted, attempting recovery");
 
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            CREATE TABLE IF NOT EXISTS events (
-                id TEXT PRIMARY KEY,
-                event_type TEXT NOT NULL,
-                severity TEXT NOT NULL,
-                timestamp TEXT NOT NULL,
-                payload_json TEXT NOT NULL DEFAULT '{}',
-                sync_status TEXT NOT NULL DEFAULT 'pending',
-                retry_count INTEGER NOT NULL DEFAULT 0,
-                created_at TEXT NOT NULL,
-                synced_at TEXT
-            );
+            var builder = new SqliteConnectionStringBuilder(_connectionString);
+            var dbPath = builder.DataSource;
+            var timestamp = DateTimeOffset.UtcNow.ToString("yyyyMMddHHmmss");
+            var corruptPath = $"{dbPath}.corrupt.{timestamp}";
 
-            CREATE INDEX IF NOT EXISTS idx_events_sync_status ON events (sync_status);
-            CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events (timestamp DESC);
-            """;
-        await command.ExecuteNonQueryAsync(cancellationToken);
+            File.Move(dbPath, corruptPath);
+            _logger.LogWarning("Renamed corrupted database to {CorruptPath}", corruptPath);
 
-        _logger.LogInformation("SQLite event store initialized");
+            // Retry with fresh database
+            await using var connection = new SqliteConnection(_connectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            await using (var walCmd = connection.CreateCommand())
+            {
+                walCmd.CommandText = "PRAGMA journal_mode=WAL;";
+                await walCmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await using (var busyCmd = connection.CreateCommand())
+            {
+                busyCmd.CommandText = "PRAGMA busy_timeout=5000;";
+                await busyCmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                CREATE TABLE IF NOT EXISTS events (
+                    id TEXT PRIMARY KEY,
+                    event_type TEXT NOT NULL,
+                    severity TEXT NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    payload_json TEXT NOT NULL DEFAULT '{}',
+                    sync_status TEXT NOT NULL DEFAULT 'pending',
+                    retry_count INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    synced_at TEXT
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_events_sync_status ON events (sync_status);
+                CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events (timestamp DESC);
+                """;
+            await command.ExecuteNonQueryAsync(cancellationToken);
+
+            _logger.LogWarning("SQLite event store initialized with fresh database after recovery");
+        }
     }
 
     public async Task InsertEventAsync(DeviceEvent deviceEvent, CancellationToken cancellationToken = default)
@@ -220,6 +279,33 @@ public sealed class SqliteEventStore : IEventStore, IDisposable
         command.CommandText = "SELECT COUNT(*) FROM events";
         var result = await command.ExecuteScalarAsync(cancellationToken);
         return Convert.ToInt32(result);
+    }
+
+    public async Task<int> CleanupOldEventsAsync(int retentionDays, CancellationToken cancellationToken = default)
+    {
+        await _writeLock.WaitAsync(cancellationToken);
+        try
+        {
+            await using var connection = new SqliteConnection(_connectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                DELETE FROM events
+                WHERE sync_status = 'synced' AND synced_at < datetime('now', '-' || @retentionDays || ' days')
+                """;
+            command.Parameters.AddWithValue("@retentionDays", retentionDays);
+            var deleted = await command.ExecuteNonQueryAsync(cancellationToken);
+
+            _logger.LogInformation("Cleaned up {Count} old synced events (retention: {RetentionDays} days)",
+                deleted, retentionDays);
+
+            return deleted;
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
     }
 
     private static DeviceEvent ReadEvent(SqliteDataReader reader)

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -19,9 +21,11 @@ class LaptopGuardianApp extends ConsumerStatefulWidget {
 class _LaptopGuardianAppState extends ConsumerState<LaptopGuardianApp> {
   GoRouter? _router;
   bool _notificationsInitialized = false;
+  StreamSubscription<RemoteMessage>? _messageOpenedSub;
 
   @override
   void dispose() {
+    _messageOpenedSub?.cancel();
     _router?.dispose();
     super.dispose();
   }
@@ -42,11 +46,13 @@ class _LaptopGuardianAppState extends ConsumerState<LaptopGuardianApp> {
     };
 
     FirebaseMessaging.instance.getInitialMessage().then((message) {
-      if (message != null) _handleNotificationNavigation(message.data);
+      if (message != null && mounted) {
+        _handleNotificationNavigation(message.data);
+      }
     });
 
-    FirebaseMessaging.onMessageOpenedApp.listen((message) {
-      _handleNotificationNavigation(message.data);
+    _messageOpenedSub = FirebaseMessaging.onMessageOpenedApp.listen((message) {
+      if (mounted) _handleNotificationNavigation(message.data);
     });
   }
 

@@ -12,4 +12,5 @@ public interface IEventStore
     Task ResetFailedEventsAsync(int maxRetryCount, CancellationToken cancellationToken = default);
     Task<int> GetPendingCountAsync(CancellationToken cancellationToken = default);
     Task<int> GetTotalCountAsync(CancellationToken cancellationToken = default);
+    Task<int> CleanupOldEventsAsync(int retentionDays, CancellationToken cancellationToken = default);
 }

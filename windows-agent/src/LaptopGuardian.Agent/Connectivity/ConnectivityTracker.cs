@@ -38,8 +38,15 @@ public sealed class ConnectivityTracker : IConnectivityTracker
         _cts?.Cancel();
         if (_monitorTask is not null)
         {
-            try { await _monitorTask; }
+            try
+            {
+                await _monitorTask.WaitAsync(TimeSpan.FromSeconds(30));
+            }
             catch (OperationCanceledException) { }
+            catch (TimeoutException)
+            {
+                _logger.LogWarning("Connectivity tracker did not stop within 30 seconds");
+            }
         }
         _logger.LogInformation("Connectivity tracker stopped");
     }

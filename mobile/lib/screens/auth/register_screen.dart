@@ -32,6 +32,23 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     super.dispose();
   }
 
+  String _friendlyError(AuthException e) {
+    final msg = e.message.toLowerCase();
+    if (msg.contains('already registered') || msg.contains('already been registered')) {
+      return 'This email is already registered. Try signing in instead.';
+    }
+    if (msg.contains('password') && msg.contains('short') || msg.contains('at least')) {
+      return 'Password must be at least 6 characters.';
+    }
+    if (msg.contains('invalid') && msg.contains('email')) {
+      return 'Please enter a valid email address.';
+    }
+    if (msg.contains('rate') || msg.contains('too many')) {
+      return 'Too many attempts. Please wait a moment and try again.';
+    }
+    return 'Registration failed. Please try again.';
+  }
+
   Future<void> _signUp() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() {
@@ -52,19 +69,19 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       }
     } on AuthException catch (e) {
       developer.log(
-        'AuthException: code=${e.code}, statusCode=${e.statusCode}, message=${e.message}',
+        'AuthException: code=${e.code}, statusCode=${e.statusCode}',
         name: 'RegisterScreen',
       );
       if (mounted) {
-        setState(() => _error = e.message);
+        setState(() => _error = _friendlyError(e));
       }
     } catch (e) {
       developer.log(
-        'SignUp error: type=${e.runtimeType}, message=$e',
+        'SignUp error: type=${e.runtimeType}',
         name: 'RegisterScreen',
       );
       if (mounted) {
-        setState(() => _error = e.toString());
+        setState(() => _error = 'Registration failed. Check your connection and try again.');
       }
     } finally {
       if (mounted) setState(() => _loading = false);

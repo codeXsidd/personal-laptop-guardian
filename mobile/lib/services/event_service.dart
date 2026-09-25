@@ -46,31 +46,9 @@ class EventService {
     return (data as List).map((e) => ActivityEvent.fromJson(e)).toList();
   }
 
-  Future<int> getEventCount(
-    String deviceId, {
-    String? eventType,
-    List<String>? eventTypes,
-    DateTime? after,
-  }) async {
-    var query = _client
-        .from('activity_events')
-        .select('id')
-        .eq('device_id', deviceId);
-
-    if (eventType != null) {
-      query = query.eq('event_type', eventType);
-    } else if (eventTypes != null && eventTypes.isNotEmpty) {
-      query = query.inFilter('event_type', eventTypes);
-    }
-
-    if (after != null) {
-      query = query.gte('timestamp', after.toIso8601String());
-    }
-
-    final data = await query;
-    return (data as List).length;
-  }
-
+  // Fetches event_type column and counts client-side.
+  // Could be optimized with a server-side RPC for large datasets,
+  // but already minimizes data transfer by selecting only the needed column.
   Future<Map<String, int>> getEventTypeCounts(
     String deviceId, {
     DateTime? after,
@@ -91,15 +69,6 @@ class EventService {
       counts[type] = (counts[type] ?? 0) + 1;
     }
     return counts;
-  }
-
-  Stream<List<Map<String, dynamic>>> watchEvents(String deviceId) {
-    return _client
-        .from('activity_events')
-        .stream(primaryKey: ['id'])
-        .eq('device_id', deviceId)
-        .order('timestamp', ascending: false)
-        .limit(20);
   }
 
   List<String> _severitiesAtOrAbove(String severity) {

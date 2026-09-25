@@ -50,8 +50,15 @@ public sealed class SyncEngine : ISyncEngine
         _cts?.Cancel();
         if (_syncTask is not null)
         {
-            try { await _syncTask; }
+            try
+            {
+                await _syncTask.WaitAsync(TimeSpan.FromSeconds(30));
+            }
             catch (OperationCanceledException) { }
+            catch (TimeoutException)
+            {
+                _logger.LogWarning("Sync engine did not stop within 30 seconds");
+            }
         }
         _logger.LogInformation("Sync engine stopped");
     }

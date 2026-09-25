@@ -57,9 +57,9 @@ class _PairDeviceScreenState extends ConsumerState<PairDeviceScreen> {
         context.go('/devices');
       }
     } on PairingException catch (e) {
-      setState(() => _error = e.message);
+      if (mounted) setState(() => _error = e.message);
     } catch (e) {
-      setState(() => _error = 'Pairing failed. Please try again.');
+      if (mounted) setState(() => _error = 'Pairing failed. Please try again.');
     } finally {
       if (mounted) setState(() => _loading = false);
     }

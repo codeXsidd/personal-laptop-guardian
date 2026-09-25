@@ -193,6 +193,32 @@ Sets `status = 'offline'` for devices where `now() - last_seen_at > heartbeat_in
 ### `cleanup_old_heartbeats(p_retention_days integer DEFAULT 7) -> integer`
 Deletes heartbeat rows older than the retention period. Returns count of deleted rows. Called on a daily schedule.
 
+### `cleanup_expired_pairing_codes() -> void`
+Deletes pairing codes where `expires_at < now() - interval '1 day'`. Should be called on a daily schedule.
+
+### `cleanup_old_activity_events(p_retention_days integer DEFAULT 90) -> integer`
+Deletes activity events older than the retention period. Returns count of deleted rows. Should be called on a daily/weekly schedule.
+
+### Data Retention Summary
+
+| Data | Location | Retention | Cleanup Mechanism |
+|------|----------|-----------|-------------------|
+| Agent events (synced) | SQLite | 30 days | Worker periodic cleanup (every 24h) |
+| Activity events | PostgreSQL | 90 days (default) | `cleanup_old_activity_events()` (requires cron) |
+| Heartbeats | PostgreSQL | 7 days (default) | `cleanup_old_heartbeats()` (requires cron) |
+| Pairing codes | PostgreSQL | 1 day after expiry | `cleanup_expired_pairing_codes()` (requires cron) |
+| FCM tokens | PostgreSQL | Auto | Removed when send-notification detects invalid token |
+| Admin actions | PostgreSQL | Indefinite | Audit log, no automatic cleanup |
+
+**Important:** The Supabase cleanup functions are defined but must be scheduled via pg_cron or the Supabase Dashboard cron feature:
+
+```sql
+SELECT cron.schedule('cleanup-heartbeats', '0 3 * * *', 'SELECT public.cleanup_old_heartbeats()');
+SELECT cron.schedule('cleanup-pairing', '0 4 * * *', 'SELECT public.cleanup_expired_pairing_codes()');
+SELECT cron.schedule('cleanup-events', '0 5 * * 0', 'SELECT public.cleanup_old_activity_events()');
+SELECT cron.schedule('mark-offline', '*/2 * * * *', 'SELECT public.mark_offline_devices()');
+```
+
 ---
 
 ## Row Level Security Policies
@@ -220,7 +246,10 @@ All tables have RLS enabled. Agent operations (event ingestion, heartbeat, regis
 - Full CRUD: `user_id = auth.uid()`
 
 ### notification_settings
-- Full CRUD: `user_id = auth.uid()`
+- `SELECT`: `user_id = auth.uid()`
+- `INSERT`: `user_id = auth.uid() AND device_id IN (SELECT id FROM devices WHERE user_id = auth.uid())`
+- `UPDATE`: `user_id = auth.uid() AND device_id IN (SELECT id FROM devices WHERE user_id = auth.uid())`
+- `DELETE`: `user_id = auth.uid()`
 
 ### admin_actions
 - `SELECT`: `user_id = auth.uid()`

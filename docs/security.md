@@ -166,6 +166,9 @@ Standard Supabase Auth flow:
 - Contains event history and sync state
 - Event data is not encrypted at rest (it's operational metadata, not secrets)
 - WAL mode enabled for concurrent read/write safety
+- busy_timeout set to 5000ms to prevent "database is locked" errors
+- Corruption recovery: detects corrupt database on startup, renames it with `.corrupt.{timestamp}` suffix, and creates a fresh database
+- Retention cleanup: synced events older than 30 days are deleted every 24 hours
 
 ### Agent Identity File
 - Stored in `%ProgramData%\LaptopGuardian\device-identity.json`
@@ -188,6 +191,8 @@ All 8 user-facing tables have RLS enabled. Key principles:
 - Agent operations bypass RLS via service_role key in edge functions
 - No INSERT/UPDATE/DELETE policies on agent-written tables (activity_events, heartbeats) -- writes go through edge functions only
 - Pairing codes are visible to any authenticated user (needed for the pairing flow) but only unclaimed, unexpired ones
+- notification_settings INSERT/UPDATE policies enforce device ownership (user cannot insert settings for another user's device)
+- Pair-device operation is race-safe: conditional UPDATE verifies row count to prevent double-claiming
 
 See [database.md](database.md) for the complete RLS policy listing.
 

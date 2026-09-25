@@ -132,12 +132,8 @@ Deno.serve(async (req) => {
     return errorResponse("Unauthorized", 401);
   }
   const token = authHeader.replace(/^Bearer\s+/i, "");
-  try {
-    const payload = JSON.parse(atob(token.split(".")[1]));
-    if (payload.role !== "service_role") {
-      return errorResponse("Unauthorized", 401);
-    }
-  } catch {
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!serviceRoleKey || token !== serviceRoleKey) {
     return errorResponse("Unauthorized", 401);
   }
 

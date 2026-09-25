@@ -58,16 +58,21 @@ Deno.serve(async (req) => {
     return errorResponse("Pairing code has expired", 400);
   }
 
-  // Claim the code
-  const { error: claimError } = await admin
+  // Claim the code (conditional update prevents double-claiming)
+  const { data: claimed, error: claimError } = await admin
     .from("pairing_codes")
     .update({ claimed_by: userId, claimed_at: new Date().toISOString() })
     .eq("id", pairingCode.id)
-    .is("claimed_by", null);
+    .is("claimed_by", null)
+    .select("id");
 
   if (claimError) {
     console.error("Failed to claim pairing code:", claimError);
     return errorResponse("Failed to claim pairing code", 500);
+  }
+
+  if (!claimed || claimed.length === 0) {
+    return errorResponse("Device already paired", 409);
   }
 
   // Update the device: assign to user, set name, mark online

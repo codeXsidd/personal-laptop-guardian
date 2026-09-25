@@ -118,7 +118,7 @@ LaptopGuardian.Agent/
 │
 └── Storage/
     ├── IEventStore.cs                 # Local persistence interface
-    └── SqliteEventStore.cs            # SQLite WAL mode, reset failed events
+    └── SqliteEventStore.cs            # SQLite WAL mode, busy timeout, retention cleanup, corruption recovery
 ```
 
 #### Monitor Architecture
@@ -196,25 +196,35 @@ backend/
 ├── supabase/
 │   ├── config.toml                     # Supabase project config
 │   ├── migrations/
-│   │   ├── 001_create_profiles.sql
-│   │   ├── 002_create_devices.sql
-│   │   ├── 003_create_events.sql
-│   │   ├── 004_create_pairing_codes.sql
-│   │   ├── 005_create_heartbeats.sql
-│   │   └── 006_enable_rls.sql
+│   │   ├── 20260920000001_create_extensions.sql
+│   │   ├── 20260920000002_create_profiles.sql
+│   │   ├── 20260920000003_create_devices.sql
+│   │   ├── 20260920000004_create_activity_events.sql
+│   │   ├── 20260920000005_create_pairing_codes.sql
+│   │   ├── 20260920000006_create_heartbeats.sql
+│   │   ├── 20260920000007_create_notification_tokens.sql
+│   │   ├── 20260920000008_create_notification_settings.sql
+│   │   ├── 20260920000009_create_admin_actions.sql
+│   │   ├── 20260920000010_create_functions.sql
+│   │   ├── 20260920000011_enable_rls.sql
+│   │   └── 20260920000012_harden_rls.sql
 │   └── seed.sql
 │
 ├── functions/
+│   ├── register-device/
+│   │   └── index.ts                    # Device self-registration + pairing code
 │   ├── ingest-events/
 │   │   └── index.ts                    # Batch event ingestion with dedup
 │   ├── pair-device/
-│   │   └── index.ts                    # Device pairing flow
+│   │   └── index.ts                    # Device pairing flow (race-safe)
+│   ├── heartbeat/
+│   │   └── index.ts                    # Device heartbeat + metrics
 │   ├── send-notification/
-│   │   └── index.ts                    # FCM push dispatch
+│   │   └── index.ts                    # FCM push dispatch (service-role auth)
 │   └── _shared/
 │       ├── cors.ts
-│       ├── auth.ts                     # Device API key validation
-│       └── types.ts
+│       ├── auth.ts                     # Device API key validation, user auth
+│       └── response.ts                 # JSON response helpers
 ```
 
 #### Authentication Model
@@ -222,7 +232,19 @@ backend/
 Two authentication paths exist:
 
 1. **Mobile app → Supabase Auth**: Standard email/password JWT. RLS policies reference `auth.uid()`.
-2. **Agent → Device API key**: A per-device key issued during pairing. Validated by edge functions and a custom RLS helper function `is_device_authenticated(device_id)`.
+2. **Agent → Device API key**: A per-device key (192-bit, `lg_dk_` prefix) issued at registration, stored as SHA-256 hash. Validated by edge functions via `get_device_by_api_key()` RPC. Agent operations bypass RLS by using service_role.
+
+Internal function-to-function calls (e.g., ingest-events → send-notification) authenticate by passing the `SUPABASE_SERVICE_ROLE_KEY` as a Bearer token, verified by direct string comparison.
+
+#### Data Retention
+
+| Data | Retention | Mechanism |
+|------|-----------|-----------|
+| SQLite events (agent) | 30 days after sync | Worker periodic cleanup via `CleanupOldEventsAsync` |
+| Activity events (Supabase) | 90 days | `cleanup_old_activity_events()` SQL function (requires cron scheduling) |
+| Heartbeats (Supabase) | 7 days | `cleanup_old_heartbeats()` SQL function (requires cron scheduling) |
+| Pairing codes (Supabase) | 1 day after expiry | `cleanup_expired_pairing_codes()` SQL function (requires cron scheduling) |
+| FCM tokens | Auto-cleanup | Invalid tokens removed when send-notification detects 404 |
 
 ### Flutter Mobile App
 

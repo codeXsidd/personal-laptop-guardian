@@ -45,11 +45,4 @@ class AuthService {
     if (data == null) return null;
     return UserProfile.fromJson(data);
   }
-
-  Future<void> resetPassword(String email) async {
-    await _client.auth.resetPasswordForEmail(
-      email,
-      redirectTo: authCallbackUrl,
-    );
-  }
 }

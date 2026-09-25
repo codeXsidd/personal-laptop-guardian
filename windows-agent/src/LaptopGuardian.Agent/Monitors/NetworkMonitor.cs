@@ -158,10 +158,9 @@ public sealed class NetworkMonitor : IEventMonitor
                     nic.OperationalStatus.ToString()));
             }
         }
-        catch (NetworkInformationException ex)
+        catch (NetworkInformationException)
         {
             // Platform doesn't support enumeration — return empty
-            System.Diagnostics.Debug.WriteLine(ex.Message);
         }
 
         return adapters;

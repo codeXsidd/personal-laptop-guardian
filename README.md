@@ -18,9 +18,9 @@ Windows Agent (C# .NET 10)  ->  Supabase (PostgreSQL + Edge Functions)  ->  Flut
 ├── windows-agent/     # C# .NET 10 Worker Service — laptop monitoring agent
 ├── backend/           # Supabase project — database, auth, edge functions
 │   ├── supabase/
-│   │   ├── migrations/   # 11 SQL migration files (schema, functions, RLS)
+│   │   ├── migrations/   # 12 SQL migration files (schema, functions, RLS)
 │   │   └── tests/        # pgTAP database tests
-│   └── functions/        # 4 Edge Functions + shared utilities
+│   └── functions/        # 5 Edge Functions + shared utilities
 ├── mobile/            # Flutter Android app — dashboard, event history, reports
 ├── docs/              # Architecture, API, database, security documentation
 └── scripts/           # Setup and utility scripts
@@ -93,7 +93,7 @@ supabase functions serve
 | `pair-device` | JWT | Mobile app claims a pairing code, links device to user |
 | `ingest-events` | API Key | Agent uploads event batches (max 100, idempotent) |
 | `heartbeat` | API Key | Agent sends liveness signal + system metrics |
-| `send-notification` | Internal Key | Sends FCM push notifications for qualifying events |
+| `send-notification` | Service Role Key | Sends FCM push notifications for qualifying events |
 
 ### Database
 
@@ -163,6 +163,12 @@ Supabase credentials are passed at build time via `--dart-define`. They are neve
 - [x] **Phase 6** -- Flutter Mobile App (complete, auth/pairing/dashboard/history/reports)
 - [x] **Phase 7** -- Event History Screens (complete, filtering/date-grouping/error-states/detail-enhancement)
 - [x] **Phase 8** -- Push Notifications (complete, FCM/Edge Function/notification settings/channels)
+- [x] **Phase 9** -- Polish, Hardening & Security (complete)
+  - SQLite: busy_timeout, corruption recovery, 30-day retention cleanup
+  - Supabase: JWT auth fix, pair-device race condition fix, RLS device-ownership checks, data retention functions
+  - Flutter: stream subscription leak fixes, mounted checks, friendly error messages, dead code cleanup
+  - Windows Agent: stop timeouts (30s), Debug.WriteLine removal
+  - Security: no secrets in logs, no raw error exposure, .gitignore hardened
 
 ## Documentation
 

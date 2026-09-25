@@ -29,13 +29,18 @@ final notificationInitProvider = FutureProvider<void>((ref) async {
     debugPrint('[Notification] FCM token registered');
   }
 
-  service.onTokenRefresh((newToken) async {
+  final refreshSub = service.onTokenRefresh((newToken) async {
     await service.registerToken(newToken);
     debugPrint('[Notification] FCM token refreshed and registered');
   });
 
-  FirebaseMessaging.onMessage.listen((message) {
+  final messageSub = FirebaseMessaging.onMessage.listen((message) {
     service.showForegroundNotification(message);
+  });
+
+  ref.onDispose(() {
+    refreshSub?.cancel();
+    messageSub.cancel();
   });
 });
 

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -6,7 +7,6 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/notification_settings.dart';
-import '../models/notification_token.dart';
 
 class NotificationService {
   final SupabaseClient _client;
@@ -60,17 +60,7 @@ class NotificationService {
     final payload = response.payload;
     if (payload != null && onNotificationTap != null) {
       onNotificationTap!(payload);
-    } else {
-      _pendingPayload = payload;
     }
-  }
-
-  String? _pendingPayload;
-
-  String? consumePendingPayload() {
-    final p = _pendingPayload;
-    _pendingPayload = null;
-    return p;
   }
 
   Future<bool> requestPermission() async {
@@ -92,8 +82,8 @@ class NotificationService {
     }
   }
 
-  void onTokenRefresh(void Function(String token) callback) {
-    _messaging.onTokenRefresh.listen(callback);
+  StreamSubscription<String>? onTokenRefresh(void Function(String token) callback) {
+    return _messaging.onTokenRefresh.listen(callback);
   }
 
   Future<void> registerToken(String fcmToken) async {
@@ -121,14 +111,6 @@ class NotificationService {
         .delete()
         .eq('user_id', userId)
         .eq('fcm_token', token);
-  }
-
-  Future<List<NotificationToken>> getTokens() async {
-    final data = await _client
-        .from('notification_tokens')
-        .select()
-        .order('created_at', ascending: false);
-    return data.map((e) => NotificationToken.fromJson(e)).toList();
   }
 
   // --- Notification Settings ---

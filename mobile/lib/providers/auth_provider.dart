@@ -1,6 +1,3 @@
-import 'dart:async';
-
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -36,10 +33,6 @@ final currentUserProvider = Provider<User?>((ref) {
   return ref.watch(authServiceProvider).currentUser;
 });
 
-final isAuthenticatedProvider = Provider<bool>((ref) {
-  return ref.watch(currentUserProvider) != null;
-});
-
 final userProfileProvider = FutureProvider<UserProfile?>((ref) async {
   final user = ref.watch(currentUserProvider);
   if (user == null) return null;
@@ -58,16 +51,3 @@ class DeepLinkState {
 
 final deepLinkStateProvider =
     StateProvider<DeepLinkState>((ref) => const DeepLinkState());
-
-class GoRouterRefreshStream extends ChangeNotifier {
-  GoRouterRefreshStream(Stream<dynamic> stream) {
-    _subscription = stream.listen((_) => notifyListeners());
-  }
-  late final StreamSubscription<dynamic> _subscription;
-
-  @override
-  void dispose() {
-    _subscription.cancel();
-    super.dispose();
-  }
-}

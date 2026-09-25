@@ -103,9 +103,27 @@ public sealed class Worker : BackgroundService
         var pendingCount = await _eventStore.GetPendingCountAsync(stoppingToken);
         _logger.LogInformation("Agent running. Pending events: {PendingCount}", pendingCount);
 
+        var lastCleanup = DateTimeOffset.UtcNow;
+
         try
         {
-            await Task.Delay(Timeout.Infinite, stoppingToken);
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromHours(1), stoppingToken);
+
+                if (DateTimeOffset.UtcNow - lastCleanup >= TimeSpan.FromHours(24))
+                {
+                    try
+                    {
+                        await _eventStore.CleanupOldEventsAsync(30, stoppingToken);
+                        lastCleanup = DateTimeOffset.UtcNow;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error during periodic event cleanup");
+                    }
+                }
+            }
         }
         catch (OperationCanceledException)
         {

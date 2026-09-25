@@ -52,8 +52,15 @@ public sealed class HeartbeatService : IHeartbeatService
         _cts?.Cancel();
         if (_heartbeatTask is not null)
         {
-            try { await _heartbeatTask; }
+            try
+            {
+                await _heartbeatTask.WaitAsync(TimeSpan.FromSeconds(30));
+            }
             catch (OperationCanceledException) { }
+            catch (TimeoutException)
+            {
+                _logger.LogWarning("Heartbeat service did not stop within 30 seconds");
+            }
         }
         _logger.LogInformation("Heartbeat service stopped");
     }
