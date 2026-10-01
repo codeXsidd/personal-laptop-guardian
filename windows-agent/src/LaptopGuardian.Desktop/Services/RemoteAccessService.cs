@@ -2,6 +2,7 @@ using System.IO;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Net.WebSockets;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -239,8 +240,12 @@ public sealed class RemoteAccessService : IDisposable
 
                 if (msg?.Type == "input")
                 {
+                    HandleInput(msg);
+                }
+                else if (msg?.Type == "pc_control")
+                {
                     Application.Current?.Dispatcher.Invoke(() =>
-                        HandleInput(msg));
+                        HandlePcControl(msg));
                 }
             }
             catch (OperationCanceledException) { break; }
@@ -251,9 +256,65 @@ public sealed class RemoteAccessService : IDisposable
 
     private static void HandleInput(RelayMessage msg)
     {
-        // Input relay is view-only in this version.
-        // Mouse/keyboard injection requires special OS permissions
-        // and may be blocked by Windows Defender Application Control.
+        if (msg.InputType == "mouse_move" || msg.InputType == "click" ||
+            msg.InputType == "double_click" || msg.InputType == "right_click")
+        {
+            var screenWidth = (int)SystemParameters.PrimaryScreenWidth;
+            var screenHeight = (int)SystemParameters.PrimaryScreenHeight;
+            var absX = (int)(msg.NX * 65535);
+            var absY = (int)(msg.NY * 65535);
+
+            var moveInput = InputHelper.CreateMouseMoveInput(absX, absY);
+            InputHelper.SendInput(moveInput);
+
+            if (msg.InputType == "click")
+                InputHelper.SendMouseClick(isRight: false);
+            else if (msg.InputType == "right_click")
+                InputHelper.SendMouseClick(isRight: true);
+            else if (msg.InputType == "double_click")
+            {
+                InputHelper.SendMouseClick(isRight: false);
+                InputHelper.SendMouseClick(isRight: false);
+            }
+        }
+        else if (msg.InputType == "scroll")
+        {
+            InputHelper.SendMouseScroll(msg.DeltaY);
+        }
+        else if (msg.InputType == "key_down")
+        {
+            InputHelper.SendKeyPress(msg.Key, down: true);
+        }
+        else if (msg.InputType == "key_up")
+        {
+            InputHelper.SendKeyPress(msg.Key, down: false);
+        }
+    }
+
+    private void HandlePcControl(RelayMessage msg)
+    {
+        var action = msg.Action;
+        if (string.IsNullOrEmpty(action)) return;
+
+        StatusChanged?.Invoke(this, $"PC control: {action}");
+
+        switch (action)
+        {
+            case "lock":
+                InputHelper.LockWorkStation();
+                break;
+            case "sleep":
+                InputHelper.SetSuspendState(false, false, false);
+                break;
+            case "restart":
+                _ = EndSessionAsync("restart_requested");
+                Task.Delay(500).ContinueWith(_ => InputHelper.InitiateShutdown(restart: true));
+                break;
+            case "shutdown":
+                _ = EndSessionAsync("shutdown_requested");
+                Task.Delay(500).ContinueWith(_ => InputHelper.InitiateShutdown(restart: false));
+                break;
+        }
     }
 
     private async Task ActivateSessionAsync(string sessionId)
@@ -341,8 +402,12 @@ internal sealed class RelayMessage
     [JsonPropertyName("input_type")] public string? InputType { get; set; }
     [JsonPropertyName("x")] public int X { get; set; }
     [JsonPropertyName("y")] public int Y { get; set; }
+    [JsonPropertyName("nx")] public double NX { get; set; }
+    [JsonPropertyName("ny")] public double NY { get; set; }
+    [JsonPropertyName("delta_y")] public int DeltaY { get; set; }
     [JsonPropertyName("button")] public string? Button { get; set; }
     [JsonPropertyName("key")] public string? Key { get; set; }
+    [JsonPropertyName("action")] public string? Action { get; set; }
 }
 
 internal sealed class SessionsResponse

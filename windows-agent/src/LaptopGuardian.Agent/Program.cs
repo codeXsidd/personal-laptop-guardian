@@ -6,6 +6,7 @@ using LaptopGuardian.Agent.Heartbeat;
 using LaptopGuardian.Agent.Identity;
 using LaptopGuardian.Agent.Ipc;
 using LaptopGuardian.Agent.Monitors;
+using LaptopGuardian.Agent.PcControl;
 using LaptopGuardian.Agent.Storage;
 using LaptopGuardian.Agent.Sync;
 using Serilog;
@@ -100,6 +101,8 @@ try
     builder.Services.AddSingleton<IConnectivityTracker, ConnectivityTracker>();
     builder.Services.AddSingleton<ISyncEngine, SyncEngine>();
     builder.Services.AddSingleton<IHeartbeatService, HeartbeatService>();
+
+    builder.Services.AddSingleton<IPcControlService, PcControlService>();
 
     builder.Services.AddHostedService<IpcServer>();
     builder.Services.AddHostedService<Worker>();

@@ -9,6 +9,7 @@ using LaptopGuardian.Agent.Heartbeat;
 using LaptopGuardian.Agent.Identity;
 using LaptopGuardian.Agent.Models;
 using LaptopGuardian.Agent.Monitors;
+using LaptopGuardian.Agent.PcControl;
 using LaptopGuardian.Agent.Storage;
 using LaptopGuardian.Agent.Backend;
 using Microsoft.Extensions.Options;
@@ -25,6 +26,7 @@ public sealed class IpcServer : IHostedService, IDisposable
     private readonly IHeartbeatService _heartbeatService;
     private readonly IConnectivityTracker _connectivityTracker;
     private readonly IBackendClient _backendClient;
+    private readonly IPcControlService _pcControl;
     private readonly AgentOptions _options;
     private readonly ILogger<IpcServer> _logger;
     private CancellationTokenSource? _cts;
@@ -37,6 +39,7 @@ public sealed class IpcServer : IHostedService, IDisposable
         IHeartbeatService heartbeatService,
         IConnectivityTracker connectivityTracker,
         IBackendClient backendClient,
+        IPcControlService pcControl,
         IOptions<AgentOptions> options,
         ILogger<IpcServer> logger)
     {
@@ -46,6 +49,7 @@ public sealed class IpcServer : IHostedService, IDisposable
         _heartbeatService = heartbeatService;
         _connectivityTracker = connectivityTracker;
         _backendClient = backendClient;
+        _pcControl = pcControl;
         _options = options.Value;
         _logger = logger;
     }
@@ -156,6 +160,10 @@ public sealed class IpcServer : IHostedService, IDisposable
                 "refresh-code" => await RefreshPairingCodeAsync(ct),
                 "unpair" => await UnpairDeviceAsync(ct),
                 "get-remote-config" => await GetRemoteConfigAsync(ct),
+                "pc-lock" => ExecutePcControl(() => _pcControl.LockWorkstation(), "lock"),
+                "pc-sleep" => ExecutePcControl(() => _pcControl.Sleep(), "sleep"),
+                "pc-restart" => ExecutePcControl(() => _pcControl.Restart(), "restart"),
+                "pc-shutdown" => ExecutePcControl(() => _pcControl.Shutdown(), "shutdown"),
                 _ => new IpcResponse { Success = false, Error = $"Unknown command: {request.Command}" }
             };
         }
@@ -163,6 +171,25 @@ public sealed class IpcServer : IHostedService, IDisposable
         {
             _logger.LogError(ex, "IPC command error: {Command}", request.Command);
             return new IpcResponse { Success = false, Error = ex.Message };
+        }
+    }
+
+    private IpcResponse ExecutePcControl(Func<bool> action, string actionName)
+    {
+        try
+        {
+            var result = action();
+            return new IpcResponse
+            {
+                Success = result,
+                Error = result ? null : $"Failed to {actionName} PC",
+                Data = new Dictionary<string, object?> { ["action"] = actionName, ["executed"] = result }
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "PC control error: {Action}", actionName);
+            return new IpcResponse { Success = false, Error = $"PC control error: {ex.Message}" };
         }
     }
 

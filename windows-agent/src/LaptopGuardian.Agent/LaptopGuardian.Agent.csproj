@@ -4,6 +4,7 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <UserSecretsId>dotnet-LaptopGuardian.Agent-ca5dfc46-9ace-4e74-9b80-b1557ff1f9c8</UserSecretsId>
   </PropertyGroup>
 

@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/device_provider.dart';
 import '../../providers/notification_provider.dart';
+import '../../providers/pin_provider.dart';
+import 'pin_setup_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -65,6 +67,8 @@ class SettingsScreen extends ConsumerWidget {
           const SizedBox(height: 16),
           _buildNotificationsCard(context, ref),
           const SizedBox(height: 16),
+          _buildPinCard(context, ref),
+          const SizedBox(height: 16),
           Card(
             child: Column(
               children: [
@@ -113,6 +117,59 @@ class SettingsScreen extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildPinCard(BuildContext context, WidgetRef ref) {
+    final pinEnabled = ref.watch(isPinEnabledProvider);
+
+    return pinEnabled.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
+      data: (enabled) {
+        return Card(
+          child: Column(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.lock_outline),
+                title: const Text('App PIN Lock'),
+                subtitle: Text(enabled ? 'Enabled' : 'Disabled'),
+                trailing: Switch(
+                  value: enabled,
+                  onChanged: (value) async {
+                    if (value) {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const PinSetupScreen(),
+                        ),
+                      );
+                    } else {
+                      await ref.read(pinServiceProvider).removePin();
+                      ref.invalidate(isPinEnabledProvider);
+                      ref.invalidate(isPinSetProvider);
+                    }
+                  },
+                ),
+              ),
+              if (enabled) ...[
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.edit),
+                  title: const Text('Change PIN'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const PinSetupScreen(isChange: true),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ],
+          ),
+        );
+      },
     );
   }
 

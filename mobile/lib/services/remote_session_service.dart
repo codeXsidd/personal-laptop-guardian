@@ -226,6 +226,18 @@ class RemoteSessionService {
     }
   }
 
+  void sendPcControl(String action) {
+    if (_ws == null) return;
+    try {
+      _ws!.add(jsonEncode({
+        'type': 'pc_control',
+        'action': action,
+      }));
+    } catch (e) {
+      debugPrint('[RemoteSession] Send pc_control error: $e');
+    }
+  }
+
   Future<void> endSession() async {
     _intentionalDisconnect = true;
     if (_currentSessionId == null) return;

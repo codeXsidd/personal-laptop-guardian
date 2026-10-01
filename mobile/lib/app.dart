@@ -11,6 +11,8 @@ import 'config/theme.dart';
 import 'platform/platform_utils.dart';
 import 'providers/auth_provider.dart';
 import 'providers/notification_provider.dart';
+import 'providers/pin_provider.dart';
+import 'screens/auth/pin_lock_screen.dart';
 
 class LaptopGuardianApp extends ConsumerStatefulWidget {
   const LaptopGuardianApp({super.key});
@@ -19,16 +21,43 @@ class LaptopGuardianApp extends ConsumerStatefulWidget {
   ConsumerState<LaptopGuardianApp> createState() => _LaptopGuardianAppState();
 }
 
-class _LaptopGuardianAppState extends ConsumerState<LaptopGuardianApp> {
+class _LaptopGuardianAppState extends ConsumerState<LaptopGuardianApp>
+    with WidgetsBindingObserver {
   GoRouter? _router;
   bool _notificationsInitialized = false;
   StreamSubscription<RemoteMessage>? _messageOpenedSub;
+  bool _wasInBackground = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _messageOpenedSub?.cancel();
     _router?.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      _wasInBackground = true;
+    } else if (state == AppLifecycleState.resumed && _wasInBackground) {
+      _wasInBackground = false;
+      _checkPinLock();
+    }
+  }
+
+  Future<void> _checkPinLock() async {
+    final pinService = ref.read(pinServiceProvider);
+    final enabled = await pinService.isPinEnabled();
+    if (enabled && mounted) {
+      ref.read(appLockedProvider.notifier).state = true;
+    }
   }
 
   void _initNotifications() {
@@ -138,6 +167,13 @@ class _LaptopGuardianAppState extends ConsumerState<LaptopGuardianApp> {
       data: (_) {
         _router ??= buildRouter();
         _initNotifications();
+
+        final isLocked = ref.watch(appLockedProvider);
+        final pinEnabledAsync = ref.watch(isPinEnabledProvider);
+        final showLock = isLocked &&
+            (pinEnabledAsync.valueOrNull ?? false) &&
+            !isDesktopPlatform;
+
         return MaterialApp.router(
           title: 'Laptop Guardian',
           theme: AppTheme.light(),
@@ -145,6 +181,16 @@ class _LaptopGuardianAppState extends ConsumerState<LaptopGuardianApp> {
           themeMode: ThemeMode.system,
           routerConfig: _router!,
           debugShowCheckedModeBanner: false,
+          builder: (context, child) {
+            if (showLock) {
+              return PinLockScreen(
+                onUnlocked: () {
+                  ref.read(appLockedProvider.notifier).state = false;
+                },
+              );
+            }
+            return child ?? const SizedBox.shrink();
+          },
         );
       },
     );

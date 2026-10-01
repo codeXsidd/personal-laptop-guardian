@@ -8,6 +8,7 @@
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <!-- <ApplicationIcon>Assets\shield.ico</ApplicationIcon> -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>LaptopGuardian</AssemblyName>
     <RootNamespace>LaptopGuardian.Desktop</RootNamespace>
     <Version>1.0.0</Version>
