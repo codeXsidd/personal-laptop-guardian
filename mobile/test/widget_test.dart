@@ -399,33 +399,6 @@ void main() {
       expect(token.deviceLabel, isNull);
     });
 
-    test('toInsertJson includes fcm_token', () {
-      final token = NotificationToken(
-        id: 'nt-1',
-        userId: 'user-1',
-        fcmToken: 'token-123',
-        deviceLabel: 'android',
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      );
-      final json = token.toInsertJson();
-      expect(json['fcm_token'], 'token-123');
-      expect(json['device_label'], 'android');
-      expect(json.containsKey('id'), false);
-      expect(json.containsKey('user_id'), false);
-    });
-
-    test('toInsertJson omits null device_label', () {
-      final token = NotificationToken(
-        id: 'nt-1',
-        userId: 'user-1',
-        fcmToken: 'token-123',
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      );
-      final json = token.toInsertJson();
-      expect(json.containsKey('device_label'), false);
-    });
   });
 
   group('NotificationSetting model', () {

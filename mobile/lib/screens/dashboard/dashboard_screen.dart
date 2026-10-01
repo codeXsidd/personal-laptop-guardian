@@ -63,7 +63,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         title: const Text('Dashboard'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.go('/devices'),
+          onPressed: () => context.pop(),
         ),
         actions: [
           IconButton(
@@ -396,7 +396,7 @@ class _QuickActions extends StatelessWidget {
               .map((a) => _QuickActionTile(
                     label: a.label,
                     icon: a.icon,
-                    onTap: () => context.go(a.route),
+                    onTap: () => context.push(a.route),
                   ))
               .toList(),
         ),
@@ -569,7 +569,7 @@ class _RecentEvents extends StatelessWidget {
                 style: theme.textTheme.titleSmall
                     ?.copyWith(fontWeight: FontWeight.w600)),
             TextButton(
-              onPressed: () => context.go('/events/$deviceId'),
+              onPressed: () => context.push('/events/$deviceId'),
               child: const Text('View All'),
             ),
           ],

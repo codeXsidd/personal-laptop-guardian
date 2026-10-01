@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -19,9 +22,11 @@ class LaptopGuardianApp extends ConsumerStatefulWidget {
 class _LaptopGuardianAppState extends ConsumerState<LaptopGuardianApp> {
   GoRouter? _router;
   bool _notificationsInitialized = false;
+  StreamSubscription<RemoteMessage>? _messageOpenedSub;
 
   @override
   void dispose() {
+    _messageOpenedSub?.cancel();
     _router?.dispose();
     super.dispose();
   }
@@ -51,15 +56,31 @@ class _LaptopGuardianAppState extends ConsumerState<LaptopGuardianApp> {
   void _initFirebaseMessageHandlers() {
     if (!isMobilePlatform) return;
     try {
-      // Firebase messaging handlers for mobile only
-      _setupMobileMessaging();
+      _handleInitialMessage();
+      _handleMessageOpenedApp();
     } catch (e) {
       debugPrint('[Firebase] Messaging setup error: $e');
     }
   }
 
-  void _setupMobileMessaging() {
-    // Implemented via notification_provider on mobile
+  Future<void> _handleInitialMessage() async {
+    final message = await FirebaseMessaging.instance.getInitialMessage();
+    if (message != null) {
+      _navigateFromMessage(message);
+    }
+  }
+
+  void _handleMessageOpenedApp() {
+    _messageOpenedSub = FirebaseMessaging.onMessageOpenedApp.listen(_navigateFromMessage);
+  }
+
+  void _navigateFromMessage(RemoteMessage message) {
+    final deviceId = message.data['device_id'];
+    if (deviceId != null && _router != null) {
+      ref.read(pendingNotificationPayloadProvider.notifier).state =
+          '$deviceId:${message.data['event_type'] ?? ''}';
+      _router!.go('/dashboard/$deviceId');
+    }
   }
 
   @override

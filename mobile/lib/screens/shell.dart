@@ -8,21 +8,33 @@ class AppShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: child,
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex(context),
-        onDestinationSelected: (index) => _onTap(context, index),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.devices),
-            label: 'Devices',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.settings),
-            label: 'Settings',
-          ),
-        ],
+    final location = GoRouterState.of(context).matchedLocation;
+    final canPop = GoRouter.of(context).canPop();
+
+    return PopScope(
+      canPop: canPop,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (location == '/settings') {
+          context.go('/devices');
+        }
+      },
+      child: Scaffold(
+        body: child,
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: _selectedIndex(context),
+          onDestinationSelected: (index) => _onTap(context, index),
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.devices),
+              label: 'Devices',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.settings),
+              label: 'Settings',
+            ),
+          ],
+        ),
       ),
     );
   }

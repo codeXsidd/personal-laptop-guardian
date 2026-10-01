@@ -18,6 +18,7 @@ windows-agent/**/obj/
 project.lock.json
 *.nuget.props
 *.nuget.targets
+*_wpftmp.csproj
 
 # Node (edge functions)
 node_modules/
@@ -71,6 +72,8 @@ mobile/.widget_preview/
 # Unused Flutter desktop template (actual desktop app is in windows-agent/)
 windows-app/
 
-# Dev signing certificates
+# Dev signing certificates and scripts
 dev-cert.cer
 *.pfx
+sign-desktop.ps1
+sign-debug.ps1

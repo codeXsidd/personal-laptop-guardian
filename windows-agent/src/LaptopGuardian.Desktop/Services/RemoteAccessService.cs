@@ -15,8 +15,6 @@ public sealed class RemoteAccessService : IDisposable
     private readonly IpcClient _ipc = new();
     private readonly HttpClient _http = new();
     private readonly DispatcherTimer _pollTimer;
-    private readonly DispatcherTimer _sessionTimer;
-
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -30,7 +28,7 @@ public sealed class RemoteAccessService : IDisposable
     private string? _currentSessionId;
     private ClientWebSocket? _ws;
     private CancellationTokenSource? _wsCts;
-    private DateTime _sessionExpiresAt;
+    private DateTime _sessionStartedAt;
 
     public event EventHandler<RemoteSessionRequest>? SessionRequested;
     public event EventHandler<string>? SessionEnded;
@@ -40,13 +38,12 @@ public sealed class RemoteAccessService : IDisposable
     public bool IsActive => _ws?.State == WebSocketState.Open && _currentSessionId != null;
     public string? CurrentSessionId => _currentSessionId;
 
+    public DateTime SessionStartedAt => _sessionStartedAt;
+
     public RemoteAccessService()
     {
         _pollTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
         _pollTimer.Tick += async (s, e) => await PollForSessionsAsync();
-
-        _sessionTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
-        _sessionTimer.Tick += (s, e) => CheckSessionExpiry();
     }
 
     public async Task InitializeAsync()
@@ -125,7 +122,7 @@ public sealed class RemoteAccessService : IDisposable
             }
 
             _currentSessionId = sessionId;
-            _sessionExpiresAt = DateTime.UtcNow.AddMinutes(15);
+            _sessionStartedAt = DateTime.UtcNow;
             StatusChanged?.Invoke(this, "Session approved. Connecting...");
 
             await ConnectRelayAsync(sessionId);
@@ -171,7 +168,6 @@ public sealed class RemoteAccessService : IDisposable
             Application.Current?.Dispatcher.Invoke(() =>
             {
                 StatusChanged?.Invoke(this, "Connected to relay. Streaming screen...");
-                _sessionTimer.Start();
             });
 
             // Activate the session
@@ -282,17 +278,8 @@ public sealed class RemoteAccessService : IDisposable
         return ScreenCapture.Capture();
     }
 
-    private void CheckSessionExpiry()
-    {
-        if (DateTime.UtcNow >= _sessionExpiresAt)
-        {
-            _ = EndSessionAsync("session_expired");
-        }
-    }
-
     public async Task EndSessionAsync(string reason = "ended_normally")
     {
-        _sessionTimer.Stop();
         _wsCts?.Cancel();
 
         if (_ws?.State == WebSocketState.Open)
@@ -334,7 +321,6 @@ public sealed class RemoteAccessService : IDisposable
     public void Dispose()
     {
         _pollTimer.Stop();
-        _sessionTimer.Stop();
         _wsCts?.Cancel();
         _ws?.Dispose();
         _http.Dispose();

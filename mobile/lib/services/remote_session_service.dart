@@ -44,6 +44,9 @@ class RemoteSessionService {
   StreamSubscription? _wsSub;
   Timer? _statusPollTimer;
   String? _currentSessionId;
+  int _reconnectAttempts = 0;
+  static const _maxReconnectAttempts = 5;
+  bool _intentionalDisconnect = false;
 
   final _frameController = StreamController<Uint8List>.broadcast();
   final _statusController = StreamController<String>.broadcast();
@@ -58,6 +61,8 @@ class RemoteSessionService {
 
   Future<RemoteSession?> requestSession(String deviceId) async {
     try {
+      _intentionalDisconnect = false;
+      _reconnectAttempts = 0;
       _statusController.add('Requesting remote access...');
 
       final response = await _supabase.functions.invoke(
@@ -145,6 +150,7 @@ class RemoteSessionService {
       );
 
       _ws = await WebSocket.connect(uri.toString());
+      _reconnectAttempts = 0;
       _statusController.add('Connected! Receiving screen...');
 
       _wsSub = _ws!.listen(
@@ -156,19 +162,40 @@ class RemoteSessionService {
           }
         },
         onError: (error) {
-          _statusController.add('Connection error');
           debugPrint('[RemoteSession] WS error: $error');
-          disconnect();
+          _attemptReconnect(sessionId);
         },
         onDone: () {
-          _statusController.add('Disconnected');
-          disconnect();
+          if (!_intentionalDisconnect) {
+            _attemptReconnect(sessionId);
+          }
         },
       );
     } catch (e) {
       _statusController.add('Connection failed: ${e.toString()}');
       debugPrint('[RemoteSession] Connect error: $e');
     }
+  }
+
+  Future<void> _attemptReconnect(String sessionId) async {
+    if (_intentionalDisconnect) return;
+    if (_reconnectAttempts >= _maxReconnectAttempts) {
+      _statusController.add('Reconnection failed. Please try again.');
+      disconnect();
+      return;
+    }
+
+    _reconnectAttempts++;
+    _wsSub?.cancel();
+    _ws?.close();
+    _ws = null;
+
+    final delay = Duration(seconds: _reconnectAttempts * 2);
+    _statusController.add('Reconnecting (attempt $_reconnectAttempts/$_maxReconnectAttempts)...');
+    await Future.delayed(delay);
+
+    if (_intentionalDisconnect || _currentSessionId == null) return;
+    await _connectRelay(sessionId);
   }
 
   void _handleTextMessage(String data) {
@@ -200,6 +227,7 @@ class RemoteSessionService {
   }
 
   Future<void> endSession() async {
+    _intentionalDisconnect = true;
     if (_currentSessionId == null) return;
 
     try {
@@ -218,6 +246,7 @@ class RemoteSessionService {
   }
 
   Future<void> revokeSession() async {
+    _intentionalDisconnect = true;
     if (_currentSessionId == null) return;
 
     try {
@@ -236,11 +265,13 @@ class RemoteSessionService {
   }
 
   void disconnect() {
+    _intentionalDisconnect = true;
     _statusPollTimer?.cancel();
     _wsSub?.cancel();
     _ws?.close();
     _ws = null;
     _currentSessionId = null;
+    _reconnectAttempts = 0;
     _sessionController.add(null);
   }
 

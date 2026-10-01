@@ -222,8 +222,9 @@ class _RemoteAccessScreenState extends State<RemoteAccessScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Sessions require explicit approval on the PC, '
-                      'are encrypted, and automatically expire after 15 minutes.',
+                      'Sessions require explicit approval on the PC '
+                      'and are encrypted. The session remains active '
+                      'until you or the PC explicitly disconnects.',
                       style: theme.textTheme.bodySmall,
                     ),
                   ],

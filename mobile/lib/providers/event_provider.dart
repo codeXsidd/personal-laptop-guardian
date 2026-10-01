@@ -49,7 +49,7 @@ class EventFilter {
 }
 
 final eventsProvider =
-    FutureProvider.family<List<ActivityEvent>, EventFilter>((ref, filter) async {
+    FutureProvider.autoDispose.family<List<ActivityEvent>, EventFilter>((ref, filter) async {
   return ref.read(eventServiceProvider).getEvents(
         filter.deviceId,
         limit: filter.limit,
@@ -60,12 +60,12 @@ final eventsProvider =
 });
 
 final recentEventsProvider =
-    FutureProvider.family<List<ActivityEvent>, String>((ref, deviceId) async {
+    FutureProvider.autoDispose.family<List<ActivityEvent>, String>((ref, deviceId) async {
   return ref.read(eventServiceProvider).getEvents(deviceId, limit: 20);
 });
 
 final eventTypeCountsProvider =
-    FutureProvider.family<Map<String, int>, String>((ref, deviceId) async {
+    FutureProvider.autoDispose.family<Map<String, int>, String>((ref, deviceId) async {
   final now = DateTime.now().toUtc();
   final yesterday = now.subtract(const Duration(hours: 24));
   return ref

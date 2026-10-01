@@ -43,6 +43,13 @@ Deno.serve(async (req) => {
     return errorResponse("You do not own this device", 403);
   }
 
+  // Terminate any active/pending remote sessions for this device
+  await admin
+    .from("remote_sessions")
+    .update({ status: "revoked" })
+    .eq("device_id", body.device_id)
+    .in("status", ["pending", "approved", "active"]);
+
   const { error: updateError } = await admin
     .from("devices")
     .update({

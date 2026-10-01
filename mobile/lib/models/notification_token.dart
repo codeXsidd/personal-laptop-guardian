@@ -25,11 +25,4 @@ class NotificationToken {
       updatedAt: DateTime.parse(json['updated_at'] as String),
     );
   }
-
-  Map<String, dynamic> toInsertJson() {
-    return {
-      'fcm_token': fcmToken,
-      if (deviceLabel != null) 'device_label': deviceLabel,
-    };
-  }
 }

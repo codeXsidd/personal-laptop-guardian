@@ -137,7 +137,7 @@ class _DeviceCard extends StatelessWidget {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: InkWell(
-        onTap: () => context.go('/dashboard/${device.id}'),
+        onTap: () => context.push('/dashboard/${device.id}'),
         borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: const EdgeInsets.all(16),

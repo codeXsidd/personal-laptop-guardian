@@ -132,7 +132,7 @@ class SettingsScreen extends ConsumerWidget {
                   leading: const Icon(Icons.notifications_outlined),
                   title: Text('Notifications — ${devices[i].displayName}'),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () => context.go(
+                  onTap: () => context.push(
                       '/settings/notifications/${devices[i].id}'),
                 ),
               ],

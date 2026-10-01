@@ -69,7 +69,7 @@ final notificationInitProvider = FutureProvider<void>((ref) async {
   });
 });
 
-final notificationSettingsProvider = FutureProvider.family<
+final notificationSettingsProvider = FutureProvider.autoDispose.family<
     List<NotificationSetting>, String>((ref, deviceId) async {
   final service = ref.read(notificationServiceProvider);
   await service.initializeDefaultSettings(deviceId);

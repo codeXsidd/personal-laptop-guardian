@@ -14,16 +14,16 @@ final devicesProvider = FutureProvider<List<Device>>((ref) async {
 });
 
 final deviceByIdProvider =
-    FutureProvider.family<Device?, String>((ref, deviceId) async {
+    FutureProvider.autoDispose.family<Device?, String>((ref, deviceId) async {
   return ref.read(deviceServiceProvider).getDevice(deviceId);
 });
 
 final latestHeartbeatProvider =
-    FutureProvider.family<Heartbeat?, String>((ref, deviceId) async {
+    FutureProvider.autoDispose.family<Heartbeat?, String>((ref, deviceId) async {
   return ref.read(deviceServiceProvider).getLatestHeartbeat(deviceId);
 });
 
 final heartbeatHistoryProvider =
-    FutureProvider.family<List<Heartbeat>, String>((ref, deviceId) async {
+    FutureProvider.autoDispose.family<List<Heartbeat>, String>((ref, deviceId) async {
   return ref.read(deviceServiceProvider).getHeartbeats(deviceId, limit: 60);
 });
