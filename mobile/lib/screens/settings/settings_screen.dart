@@ -71,7 +71,7 @@ class SettingsScreen extends ConsumerWidget {
                 ListTile(
                   leading: const Icon(Icons.info_outline),
                   title: const Text('About'),
-                  subtitle: const Text('Laptop Guardian v1.0.0'),
+                  subtitle: const Text('Laptop Guardian v1.1.0'),
                 ),
                 const Divider(height: 1),
                 ListTile(
@@ -100,7 +100,9 @@ class SettingsScreen extends ConsumerWidget {
                     if (confirm == true && context.mounted) {
                       try {
                         await ref.read(notificationServiceProvider).unregisterCurrentToken();
-                      } catch (_) {}
+                      } catch (e) {
+                        debugPrint('[Settings] Token unregister error: $e');
+                      }
                       await ref.read(authServiceProvider).signOut();
                       if (context.mounted) context.go('/login');
                     }

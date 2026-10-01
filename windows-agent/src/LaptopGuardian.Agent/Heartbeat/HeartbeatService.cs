@@ -2,6 +2,7 @@ using LaptopGuardian.Agent.Backend;
 using LaptopGuardian.Agent.Configuration;
 using LaptopGuardian.Agent.Connectivity;
 using LaptopGuardian.Agent.Identity;
+using LaptopGuardian.Agent.Models;
 using LaptopGuardian.Agent.Monitors;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -38,13 +39,20 @@ public sealed class HeartbeatService : IHeartbeatService
         _metricsProvider = metricsProvider;
     }
 
-    public Task StartAsync(CancellationToken cancellationToken)
+    public async Task StartAsync(CancellationToken cancellationToken)
     {
+        var identity = await _identityService.GetOrCreateIdentityAsync(cancellationToken);
+        if (identity.IsPaired)
+        {
+            IsPaired = true;
+            _logger.LogInformation("Restored paired state from stored identity (paired at: {PairedAt})",
+                identity.PairedAt);
+        }
+
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _heartbeatTask = HeartbeatLoopAsync(_cts.Token);
-        _logger.LogInformation("Heartbeat service started (interval: {Interval}s)",
-            _options.HeartbeatIntervalSeconds);
-        return Task.CompletedTask;
+        _logger.LogInformation("Heartbeat service started (interval: {Interval}s, paired: {IsPaired})",
+            _options.HeartbeatIntervalSeconds, IsPaired);
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
@@ -104,30 +112,52 @@ public sealed class HeartbeatService : IHeartbeatService
         {
             var metrics = BuildMetricsPayload();
             var response = await _backendClient.SendHeartbeatAsync(identity.ApiKey, metrics, ct);
-            _logger.LogDebug("Heartbeat acknowledged, server time: {ServerTime}", response.ServerTime);
 
-            if (!IsPaired)
+            if (response.IsPaired)
             {
-                IsPaired = true;
-                identity.PairedAt = DateTimeOffset.UtcNow;
-                await _identityService.SaveIdentityAsync(identity, ct);
-                _logger.LogInformation("Device paired successfully! Server device ID: {DeviceId}",
-                    response.DeviceId);
-                DevicePaired?.Invoke(this, EventArgs.Empty);
+                if (!IsPaired)
+                {
+                    IsPaired = true;
+                    if (!identity.IsPaired)
+                    {
+                        identity.PairedAt = DateTimeOffset.UtcNow;
+                        await _identityService.SaveIdentityAsync(identity, ct);
+                    }
+                    _logger.LogInformation("Device paired successfully! Server device ID: {DeviceId}",
+                        response.DeviceId);
+                    DevicePaired?.Invoke(this, EventArgs.Empty);
+                }
+                else
+                {
+                    _logger.LogDebug("Heartbeat acknowledged, server time: {ServerTime}", response.ServerTime);
+                }
+            }
+            else
+            {
+                if (IsPaired)
+                {
+                    IsPaired = false;
+                    identity.PairedAt = null;
+                    await _identityService.SaveIdentityAsync(identity, ct);
+                    _logger.LogWarning("Device has been unpaired remotely");
+                }
+
+                _logger.LogInformation(
+                    "Heartbeat OK — awaiting pairing (code expires: {ExpiresAt})",
+                    identity.PairingCodeExpiresAt?.ToLocalTime().ToString("HH:mm:ss") ?? "unknown");
+
+                await TryRefreshPairingCodeAsync(identity, ct);
             }
         }
         catch (BackendAuthenticationException)
         {
-            if (!IsPaired)
+            _logger.LogWarning("Heartbeat authentication failed — API key may be invalid or device revoked");
+            if (IsPaired)
             {
-                _logger.LogDebug(
-                    "Heartbeat returned 401 — awaiting pairing. Code: {PairingCode}",
-                    identity.PairingCode);
-            }
-            else
-            {
-                _logger.LogWarning("Heartbeat authentication failed — device may have been revoked");
                 IsPaired = false;
+                identity.PairedAt = null;
+                try { await _identityService.SaveIdentityAsync(identity, ct); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Failed to save unpaired state"); }
             }
         }
         catch (HttpRequestException ex)
@@ -137,6 +167,33 @@ public sealed class HeartbeatService : IHeartbeatService
         catch (BackendException ex)
         {
             _logger.LogError(ex, "Backend error during heartbeat");
+        }
+    }
+
+    private async Task TryRefreshPairingCodeAsync(DeviceIdentity identity, CancellationToken ct)
+    {
+        if (identity.PairingCodeExpiresAt is null || identity.PairingCodeExpiresAt > DateTimeOffset.UtcNow)
+            return;
+
+        if (identity.ApiKey is null)
+            return;
+
+        try
+        {
+            _logger.LogInformation("Pairing code expired — requesting new code from server");
+            var response = await _backendClient.RefreshPairingCodeAsync(identity.ApiKey, ct);
+
+            identity.PairingCode = response.PairingCode;
+            identity.PairingCodeExpiresAt = response.ExpiresAt;
+            await _identityService.SaveIdentityAsync(identity, ct);
+
+            _logger.LogInformation(
+                "Pairing code refreshed (expires: {ExpiresAt}). View code in Desktop app.",
+                response.ExpiresAt.ToLocalTime().ToString("HH:mm:ss"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to refresh pairing code — will retry on next heartbeat");
         }
     }
 

@@ -4,4 +4,5 @@ public interface ISyncEngine : IDisposable
 {
     Task StartAsync(CancellationToken cancellationToken);
     Task StopAsync(CancellationToken cancellationToken);
+    void ResetBackoff();
 }

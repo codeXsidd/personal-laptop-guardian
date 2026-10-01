@@ -15,6 +15,7 @@ import '../screens/events/network_history_screen.dart';
 import '../screens/events/process_history_screen.dart';
 import '../screens/events/usb_history_screen.dart';
 import '../screens/pairing/pair_device_screen.dart';
+import '../screens/remote/remote_access_screen.dart';
 import '../screens/reports/reports_screen.dart';
 import '../screens/settings/notification_settings_screen.dart';
 import '../screens/settings/settings_screen.dart';
@@ -132,6 +133,12 @@ GoRouter buildRouter() {
           GoRoute(
             path: '/events/:deviceId/eventlog',
             builder: (context, state) => EventLogScreen(
+              deviceId: state.pathParameters['deviceId']!,
+            ),
+          ),
+          GoRoute(
+            path: '/remote/:deviceId',
+            builder: (context, state) => RemoteAccessScreen(
               deviceId: state.pathParameters['deviceId']!,
             ),
           ),

@@ -26,6 +26,10 @@ interface FCMResponse {
   error?: { code: number; message: string; status: string };
 }
 
+function base64url(str: string): string {
+  return btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
 async function getAccessToken(): Promise<string> {
   const serviceAccountJson = Deno.env.get("FIREBASE_SERVICE_ACCOUNT");
   if (!serviceAccountJson) {
@@ -34,8 +38,8 @@ async function getAccessToken(): Promise<string> {
 
   const sa = JSON.parse(serviceAccountJson);
   const now = Math.floor(Date.now() / 1000);
-  const header = btoa(JSON.stringify({ alg: "RS256", typ: "JWT" }));
-  const claim = btoa(
+  const header = base64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  const claim = base64url(
     JSON.stringify({
       iss: sa.client_email,
       scope: "https://www.googleapis.com/auth/firebase.messaging",
@@ -63,7 +67,7 @@ async function getAccessToken(): Promise<string> {
   const tokenResp = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
+    body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`,
   });
 
   const tokenData = await tokenResp.json();
@@ -176,10 +180,30 @@ Deno.serve(async (req) => {
     }
   }
 
+  const DEFAULT_MIN_SEVERITY: Record<string, string> = {
+    login_failed: "high",
+    session_login: "info",
+    session_logout: "info",
+    session_lock: "info",
+    session_unlock: "info",
+    usb_connected: "info",
+    usb_disconnected: "info",
+    network_connected: "info",
+    network_disconnected: "info",
+    network_changed: "info",
+    process_start: "medium",
+    process_stop: "medium",
+    file_access: "info",
+    system_startup: "info",
+    system_shutdown: "info",
+    agent_started: "info",
+  };
+
   const eventsToNotify = body.events.filter((evt) => {
     const setting = settingsMap.get(evt.event_type);
     if (!setting) {
-      return (SEVERITY_RANK[evt.severity] ?? 0) >= SEVERITY_RANK["high"];
+      const defaultMin = DEFAULT_MIN_SEVERITY[evt.event_type] ?? "high";
+      return (SEVERITY_RANK[evt.severity] ?? 0) >= (SEVERITY_RANK[defaultMin] ?? 0);
     }
     if (!setting.enabled) return false;
     return (SEVERITY_RANK[evt.severity] ?? 0) >= (SEVERITY_RANK[setting.min_severity] ?? 0);

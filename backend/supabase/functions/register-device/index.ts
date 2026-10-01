@@ -2,6 +2,9 @@ import { handleCors } from "../_shared/cors.ts";
 import { jsonResponse, errorResponse } from "../_shared/response.ts";
 import { getSupabaseAdmin } from "../_shared/auth.ts";
 
+const MAX_REGISTRATIONS_PER_HOUR = 5;
+const MAX_MACHINE_NAME_LENGTH = 255;
+
 interface RegisterRequest {
   machine_name: string;
   os_version?: string;
@@ -27,7 +30,28 @@ Deno.serve(async (req) => {
     return errorResponse("machine_name is required");
   }
 
+  if (body.machine_name.length > MAX_MACHINE_NAME_LENGTH) {
+    return errorResponse(`machine_name must be ${MAX_MACHINE_NAME_LENGTH} characters or less`);
+  }
+
   const admin = getSupabaseAdmin();
+
+  // Rate limit: max registrations per IP per hour
+  const clientIp = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+    ?? req.headers.get("cf-connecting-ip")
+    ?? "unknown";
+
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const { count, error: countError } = await admin
+    .from("admin_actions")
+    .select("*", { count: "exact", head: true })
+    .eq("action_type", "device_registered")
+    .gte("created_at", oneHourAgo)
+    .eq("details->>client_ip", clientIp);
+
+  if (!countError && (count ?? 0) >= MAX_REGISTRATIONS_PER_HOUR) {
+    return errorResponse("Too many registration attempts. Try again later.", 429);
+  }
 
   // Generate a random API key: lg_dk_ prefix + 48 random hex chars
   const rawBytes = new Uint8Array(24);
@@ -88,11 +112,11 @@ Deno.serve(async (req) => {
     return errorResponse("Failed to create pairing code", 500);
   }
 
-  // Log the admin action
+  // Log the admin action (includes client_ip for rate limiting)
   await admin.from("admin_actions").insert({
     device_id: device.id,
     action_type: "device_registered",
-    details: { machine_name: body.machine_name },
+    details: { machine_name: body.machine_name, client_ip: clientIp },
   });
 
   return jsonResponse({

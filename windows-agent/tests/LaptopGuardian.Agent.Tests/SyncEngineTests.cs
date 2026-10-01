@@ -43,7 +43,8 @@ public sealed class SyncEngineTests : IAsyncLifetime, IDisposable
         {
             DeviceId = Guid.NewGuid().ToString(),
             ApiKey = "lg_dk_test_key",
-            ServerDeviceId = Guid.NewGuid().ToString()
+            ServerDeviceId = Guid.NewGuid().ToString(),
+            PairedAt = DateTimeOffset.UtcNow
         };
         _identityService.GetOrCreateIdentityAsync(Arg.Any<CancellationToken>()).Returns(identity);
 
@@ -175,6 +176,24 @@ public sealed class SyncEngineTests : IAsyncLifetime, IDisposable
 
         var delay = _syncEngine.GetBackoffDelay();
         Assert.True(delay > TimeSpan.FromSeconds(_agentOptions.SyncIntervalSeconds));
+    }
+
+    [Fact]
+    public async Task SyncBatchAsync_SkipsWhenNotPaired()
+    {
+        var unpairedIdentity = new DeviceIdentity
+        {
+            DeviceId = Guid.NewGuid().ToString(),
+            ApiKey = "lg_dk_test_key",
+            ServerDeviceId = Guid.NewGuid().ToString()
+        };
+        _identityService.GetOrCreateIdentityAsync(Arg.Any<CancellationToken>()).Returns(unpairedIdentity);
+
+        await InsertTestEvent("unpaired-1");
+        await _syncEngine.SyncBatchAsync(CancellationToken.None);
+
+        await _backendClient.DidNotReceive()
+            .IngestEventsAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<DeviceEvent>>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]

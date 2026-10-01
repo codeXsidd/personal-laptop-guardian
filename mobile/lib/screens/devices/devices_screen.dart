@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,11 +8,33 @@ import 'package:timeago/timeago.dart' as timeago;
 import '../../models/device.dart';
 import '../../providers/device_provider.dart';
 
-class DevicesScreen extends ConsumerWidget {
+class DevicesScreen extends ConsumerStatefulWidget {
   const DevicesScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<DevicesScreen> createState() => _DevicesScreenState();
+}
+
+class _DevicesScreenState extends ConsumerState<DevicesScreen> {
+  Timer? _refreshTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => ref.invalidate(devicesProvider),
+    );
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final devicesAsync = ref.watch(devicesProvider);
     final theme = Theme.of(context);
 
@@ -94,11 +118,21 @@ class _DeviceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isPairedOffline = device.isOffline && device.userId != null;
     final statusColor = device.isOnline
         ? Colors.green
         : device.isPairing
             ? Colors.orange
-            : Colors.grey;
+            : isPairedOffline
+                ? Colors.blueGrey
+                : Colors.grey;
+    final statusLabel = device.isOnline
+        ? 'ONLINE'
+        : device.isPairing
+            ? 'PAIRING'
+            : isPairedOffline
+                ? 'OFFLINE'
+                : 'OFFLINE';
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -161,7 +195,7 @@ class _DeviceCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 6),
                     Text(
-                      device.status.toUpperCase(),
+                      statusLabel,
                       style: theme.textTheme.labelSmall
                           ?.copyWith(color: statusColor, fontWeight: FontWeight.w600),
                     ),

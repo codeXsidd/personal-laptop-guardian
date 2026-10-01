@@ -68,6 +68,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (msg.contains('email not confirmed')) {
       return 'Please confirm your email before signing in.';
     }
+    if (msg.contains('socketexception') ||
+        msg.contains('connection') ||
+        msg.contains('network')) {
+      return 'No internet connection. Check your network and try again.';
+    }
     return 'Sign-in failed. Please try again.';
   }
 

@@ -1,0 +1,119 @@
+<UserControl x:Class="LaptopGuardian.Desktop.Views.PairPhoneView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:LaptopGuardian.Desktop.ViewModels"
+             mc:Ignorable="d" d:DataContext="{d:DesignInstance vm:PairPhoneViewModel}">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,8,0">
+        <StackPanel MaxWidth="500" HorizontalAlignment="Left">
+            <TextBlock Text="Pair Phone" Style="{StaticResource Heading}"/>
+
+            <!-- Service Not Running -->
+            <Border Style="{StaticResource CardBorder}" Visibility="{Binding IsServiceRunning, Converter={StaticResource BoolToVis}, ConverterParameter=Invert}">
+                <StackPanel HorizontalAlignment="Center">
+                    <TextBlock Text="&#x26A0;" FontSize="40" HorizontalAlignment="Center" Margin="0,0,0,12"/>
+                    <TextBlock Text="Agent service is not running" FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center" Foreground="{StaticResource TextPrimaryBrush}"/>
+                    <TextBlock Text="Start the Laptop Guardian service to pair your phone." Style="{StaticResource Caption}" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Already Paired -->
+            <Border Style="{StaticResource CardBorder}" Visibility="{Binding IsPaired, Converter={StaticResource BoolToVis}}">
+                <StackPanel HorizontalAlignment="Center">
+                    <TextBlock Text="&#x2705;" FontSize="40" HorizontalAlignment="Center" Margin="0,0,0,12"/>
+                    <TextBlock Text="Phone Connected" FontSize="18" FontWeight="Bold" HorizontalAlignment="Center" Foreground="{StaticResource AccentBrush}"/>
+                    <TextBlock Style="{StaticResource Caption}" HorizontalAlignment="Center" Margin="0,8,0,0">
+                        <TextBlock.Text>
+                            <Binding Path="PairedAt" StringFormat="Paired on {0:g}"/>
+                        </TextBlock.Text>
+                    </TextBlock>
+                    <TextBlock Text="Your phone is connected and receiving notifications." Style="{StaticResource Caption}" HorizontalAlignment="Center" Margin="0,4,0,16"/>
+
+                    <!-- Unpair Button -->
+                    <Button Content="Unpair Device" Command="{Binding UnpairDeviceCommand}" HorizontalAlignment="Center"
+                            IsEnabled="{Binding IsUnpairing, Converter={StaticResource InverseBool}}"
+                            Foreground="{StaticResource DangerBrush}" FontSize="13" FontWeight="SemiBold"
+                            Padding="20,10" BorderBrush="{StaticResource DangerBrush}" BorderThickness="1.5" Cursor="Hand">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border x:Name="Bd" Background="Transparent" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="Bd" Property="Background">
+                                            <Setter.Value>
+                                                <SolidColorBrush Color="{StaticResource DangerColor}" Opacity="0.08"/>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Trigger>
+                                    <Trigger Property="IsEnabled" Value="False">
+                                        <Setter TargetName="Bd" Property="Opacity" Value="0.5"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+
+                    <!-- Error -->
+                    <TextBlock Text="{Binding ErrorMessage}" Foreground="{StaticResource DangerBrush}" FontSize="12"
+                               HorizontalAlignment="Center" Margin="0,12,0,0"
+                               Visibility="{Binding ErrorMessage, Converter={StaticResource BoolToVis}}"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Pairing Code Display -->
+            <Border Style="{StaticResource CardBorder}" Visibility="{Binding IsPaired, Converter={StaticResource BoolToVis}, ConverterParameter=Invert}">
+                <StackPanel Visibility="{Binding IsServiceRunning, Converter={StaticResource BoolToVis}}">
+                    <TextBlock Text="Enter this code in the Laptop Guardian mobile app:" Style="{StaticResource Caption}" HorizontalAlignment="Center" Margin="0,0,0,16"/>
+
+                    <!-- Code Display -->
+                    <Border Background="#F0F4FF" CornerRadius="12" Padding="24,16" HorizontalAlignment="Center" Margin="0,0,0,12">
+                        <TextBlock Text="{Binding PairingCode}" FontSize="36" FontWeight="Bold" FontFamily="Consolas"
+                                   Foreground="{StaticResource PrimaryBrush}" HorizontalAlignment="Center"/>
+                    </Border>
+
+                    <!-- Countdown -->
+                    <TextBlock HorizontalAlignment="Center" Margin="0,0,0,16">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource Caption}">
+                                <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding CodeExpired}" Value="True">
+                                        <Setter Property="Foreground" Value="{StaticResource DangerBrush}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                        <Run Text="Expires in: "/><Run Text="{Binding CountdownText, Mode=OneWay}"/>
+                    </TextBlock>
+
+                    <!-- Buttons -->
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                        <Button Content="Copy Code" Style="{StaticResource PrimaryButton}" Command="{Binding CopyCodeCommand}" Margin="0,0,8,0"/>
+                        <Button Content="Show QR" Style="{StaticResource SecondaryButton}" Command="{Binding ShowQrCodeCommand}" Margin="0,0,8,0"/>
+                        <Button Content="New Code" Style="{StaticResource SecondaryButton}" Command="{Binding GenerateNewCodeCommand}"
+                                IsEnabled="{Binding IsGenerating, Converter={StaticResource InverseBool}}"/>
+                    </StackPanel>
+
+                    <!-- Error -->
+                    <TextBlock Text="{Binding ErrorMessage}" Foreground="{StaticResource DangerBrush}" FontSize="12"
+                               HorizontalAlignment="Center" Margin="0,12,0,0"
+                               Visibility="{Binding ErrorMessage, Converter={StaticResource BoolToVis}}"/>
+
+                    <!-- Instructions -->
+                    <Border Background="#F8F8F8" CornerRadius="8" Padding="16" Margin="0,20,0,0">
+                        <StackPanel>
+                            <TextBlock Text="How to pair:" FontWeight="SemiBold" FontSize="13" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,8"/>
+                            <TextBlock Text="1. Open the Laptop Guardian app on your phone" Style="{StaticResource Caption}" Margin="0,2"/>
+                            <TextBlock Text="2. Go to Devices > Pair Device" Style="{StaticResource Caption}" Margin="0,2"/>
+                            <TextBlock Text="3. Enter the 6-character code or scan the QR code" Style="{StaticResource Caption}" Margin="0,2"/>
+                            <TextBlock Text="4. Tap Pair to connect" Style="{StaticResource Caption}" Margin="0,2"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

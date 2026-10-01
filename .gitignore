@@ -58,3 +58,19 @@ desktop.ini
 *.msi
 *.dll
 publish/
+
+# Release artifacts
+release/
+release-package/
+*.apk
+*.aar
+
+# Flutter widget preview (IDE tool)
+mobile/.widget_preview/
+
+# Unused Flutter desktop template (actual desktop app is in windows-agent/)
+windows-app/
+
+# Dev signing certificates
+dev-cert.cer
+*.pfx

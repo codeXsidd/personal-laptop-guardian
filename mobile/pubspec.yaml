@@ -1,7 +1,7 @@
 name: laptop_guardian
-description: Personal Laptop Guardian - Monitor your Windows laptop from your Android phone.
+description: Personal Laptop Guardian - Monitor your Windows laptop and Android phone.
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.1.0+2
 
 environment:
   sdk: ^3.13.4
@@ -23,6 +23,9 @@ dependencies:
   firebase_core: ^3.13.0
   firebase_messaging: ^15.2.4
   flutter_local_notifications: ^19.0.0
+  window_manager: ^0.4.3
+  path_provider: ^2.1.5
+  tray_manager: ^0.2.3
 
 dev_dependencies:
   flutter_test:

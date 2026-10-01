@@ -103,7 +103,46 @@ public sealed class SupabaseBackendClient : IBackendClient
         return new HeartbeatResponse(
             result.Status,
             result.DeviceId,
-            DateTimeOffset.Parse(result.ServerTime));
+            DateTimeOffset.Parse(result.ServerTime),
+            result.IsPaired);
+    }
+
+    public async Task<RefreshPairingCodeResponse> RefreshPairingCodeAsync(
+        string apiKey,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogDebug("Requesting pairing code refresh");
+
+        using var client = CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, "functions/v1/refresh-pairing-code");
+        request.Headers.Add("x-device-api-key", apiKey);
+        request.Content = JsonContent.Create(new { }, options: JsonOptions);
+
+        using var response = await client.SendAsync(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+
+        var result = await response.Content.ReadFromJsonAsync<RefreshPairingCodeJsonResponse>(JsonOptions, cancellationToken)
+            ?? throw new BackendException("Empty response from refresh-pairing-code");
+
+        return new RefreshPairingCodeResponse(
+            result.PairingCode,
+            DateTimeOffset.Parse(result.ExpiresAt),
+            result.DeviceId);
+    }
+
+    public async Task UnpairDeviceAsync(
+        string apiKey,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogDebug("Requesting device unpair");
+
+        using var client = CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, "functions/v1/unpair-device");
+        request.Headers.Add("x-device-api-key", apiKey);
+        request.Content = JsonContent.Create(new { }, options: JsonOptions);
+
+        using var response = await client.SendAsync(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
     }
 
     private HttpClient CreateClient() => _httpClientFactory.CreateClient(HttpClientName);
@@ -144,5 +183,13 @@ public sealed class SupabaseBackendClient : IBackendClient
         [JsonPropertyName("status")] public required string Status { get; init; }
         [JsonPropertyName("device_id")] public required string DeviceId { get; init; }
         [JsonPropertyName("server_time")] public required string ServerTime { get; init; }
+        [JsonPropertyName("is_paired")] public bool IsPaired { get; init; }
+    }
+
+    private sealed record RefreshPairingCodeJsonResponse
+    {
+        [JsonPropertyName("pairing_code")] public required string PairingCode { get; init; }
+        [JsonPropertyName("expires_at")] public required string ExpiresAt { get; init; }
+        [JsonPropertyName("device_id")] public required string DeviceId { get; init; }
     }
 }

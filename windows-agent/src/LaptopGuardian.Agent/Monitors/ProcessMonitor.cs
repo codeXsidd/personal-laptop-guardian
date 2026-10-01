@@ -83,12 +83,15 @@ public sealed class ProcessMonitor : IEventMonitor
                 payload["executable_path"] = proc.ExecutablePath;
             if (proc.SessionId is not null)
                 payload["session_id"] = proc.SessionId.Value;
+            if (proc.WindowTitle is not null)
+                payload["window_title"] = proc.WindowTitle;
 
             var deviceEvent = DeviceEvent.Create(
                 _deviceId, EventType.ProcessStart, EventSeverity.Info, payload);
             await _eventStore.InsertEventAsync(deviceEvent);
         }
 
+        var now = DateTimeOffset.UtcNow;
         foreach (var proc in stopped)
         {
             var payload = new Dictionary<string, object>
@@ -96,11 +99,20 @@ public sealed class ProcessMonitor : IEventMonitor
                 ["process_name"] = proc.Name,
                 ["pid"] = proc.Pid,
                 ["start_time"] = proc.StartTime.ToString("O"),
-                ["stop_time"] = DateTimeOffset.UtcNow.ToString("O")
+                ["stop_time"] = now.ToString("O")
             };
+
+            if (proc.StartTime > DateTimeOffset.MinValue)
+            {
+                var duration = (now - proc.StartTime).TotalSeconds;
+                if (duration > 0)
+                    payload["duration_seconds"] = Math.Round(duration, 1);
+            }
 
             if (proc.ExecutablePath is not null)
                 payload["executable_path"] = proc.ExecutablePath;
+            if (proc.WindowTitle is not null)
+                payload["window_title"] = proc.WindowTitle;
 
             var deviceEvent = DeviceEvent.Create(
                 _deviceId, EventType.ProcessStop, EventSeverity.Info, payload);
@@ -133,13 +145,15 @@ public sealed class ProcessMonitor : IEventMonitor
 
                 var startTime = GetProcessStartTime(proc);
                 var key = new ProcessKey(proc.Id, startTime);
+                var windowTitle = GetWindowTitle(proc);
 
                 snapshot[key] = new ProcessSnapshot(
                     proc.Id,
                     name,
                     GetExecutablePath(proc),
                     startTime,
-                    GetSessionId(proc));
+                    GetSessionId(proc),
+                    windowTitle);
             }
             catch (InvalidOperationException)
             {
@@ -212,6 +226,19 @@ public sealed class ProcessMonitor : IEventMonitor
         }
     }
 
+    private static string? GetWindowTitle(Process proc)
+    {
+        try
+        {
+            var title = proc.MainWindowTitle;
+            return string.IsNullOrWhiteSpace(title) ? null : title;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public Task StopAsync(CancellationToken cancellationToken)
     {
         _pollTimer?.Change(Timeout.Infinite, Timeout.Infinite);
@@ -231,5 +258,6 @@ public sealed class ProcessMonitor : IEventMonitor
         string Name,
         string? ExecutablePath,
         DateTimeOffset StartTime,
-        int? SessionId);
+        int? SessionId,
+        string? WindowTitle = null);
 }

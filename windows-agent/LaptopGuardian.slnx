@@ -1,8 +1,10 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/LaptopGuardian.Agent/LaptopGuardian.Agent.csproj" />
+    <Project Path="src/LaptopGuardian.Desktop/LaptopGuardian.Desktop.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/LaptopGuardian.Agent.Tests/LaptopGuardian.Agent.Tests.csproj" />
+    <Project Path="tests/LaptopGuardian.Desktop.Tests/LaptopGuardian.Desktop.Tests.csproj" />
   </Folder>
 </Solution>

@@ -14,4 +14,10 @@ public sealed record IngestEventsResponse(
 public sealed record HeartbeatResponse(
     string Status,
     string DeviceId,
-    DateTimeOffset ServerTime);
+    DateTimeOffset ServerTime,
+    bool IsPaired);
+
+public sealed record RefreshPairingCodeResponse(
+    string PairingCode,
+    DateTimeOffset ExpiresAt,
+    string DeviceId);

@@ -4,6 +4,7 @@ using LaptopGuardian.Agent.Configuration;
 using LaptopGuardian.Agent.Connectivity;
 using LaptopGuardian.Agent.Heartbeat;
 using LaptopGuardian.Agent.Identity;
+using LaptopGuardian.Agent.Ipc;
 using LaptopGuardian.Agent.Monitors;
 using LaptopGuardian.Agent.Storage;
 using LaptopGuardian.Agent.Sync;
@@ -100,6 +101,7 @@ try
     builder.Services.AddSingleton<ISyncEngine, SyncEngine>();
     builder.Services.AddSingleton<IHeartbeatService, HeartbeatService>();
 
+    builder.Services.AddHostedService<IpcServer>();
     builder.Services.AddHostedService<Worker>();
 
     var host = builder.Build();

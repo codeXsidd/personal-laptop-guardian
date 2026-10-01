@@ -59,10 +59,35 @@ class _PairDeviceScreenState extends ConsumerState<PairDeviceScreen> {
     } on PairingException catch (e) {
       if (mounted) setState(() => _error = e.message);
     } catch (e) {
-      if (mounted) setState(() => _error = 'Pairing failed. Please try again.');
+      if (mounted) {
+        setState(() => _error =
+            'Could not reach the server. Check your internet connection and try again.');
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Widget _step(ThemeData theme, String number, String text) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 22,
+          child: Text(
+            number.isEmpty ? '•' : '$number.',
+            style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onPrimaryContainer,
+                fontWeight: FontWeight.w600),
+          ),
+        ),
+        Expanded(
+          child: Text(text,
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: theme.colorScheme.onPrimaryContainer)),
+        ),
+      ],
+    );
   }
 
   @override
@@ -86,15 +111,31 @@ class _PairDeviceScreenState extends ConsumerState<PairDeviceScreen> {
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.link, size: 40, color: theme.colorScheme.primary),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Enter the 6-character pairing code shown on your laptop after installing the Guardian agent.',
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onPrimaryContainer),
+                    Row(
+                      children: [
+                        Icon(Icons.link,
+                            size: 28, color: theme.colorScheme.primary),
+                        const SizedBox(width: 8),
+                        Text('How to pair',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                                color: theme.colorScheme.onPrimaryContainer,
+                                fontWeight: FontWeight.w600)),
+                      ],
                     ),
+                    const SizedBox(height: 12),
+                    _step(theme, '1',
+                        'Install & run the Guardian agent on your Windows laptop.'),
+                    const SizedBox(height: 6),
+                    _step(theme, '2',
+                        'Open the agent log at C:\\ProgramData\\LaptopGuardian\\logs to find your 6-character pairing code.'),
+                    const SizedBox(height: 6),
+                    _step(theme, '3',
+                        'Enter the code below and give your device a name.'),
+                    const SizedBox(height: 6),
+                    _step(theme, '',
+                        'Code expires after 10 minutes. The agent will auto-generate a new code when needed.'),
                   ],
                 ),
               ),

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,15 +12,47 @@ import '../../models/event_type.dart';
 import '../../models/heartbeat.dart';
 import '../../providers/device_provider.dart';
 import '../../providers/event_provider.dart';
+import '../../services/device_service.dart';
+import '../../providers/auth_provider.dart';
 import '../events/event_list_screen.dart' show eventSubtitle;
 
-class DashboardScreen extends ConsumerWidget {
+class DashboardScreen extends ConsumerStatefulWidget {
   final String deviceId;
 
   const DashboardScreen({super.key, required this.deviceId});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends ConsumerState<DashboardScreen> {
+  Timer? _refreshTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => _invalidateAll(),
+    );
+  }
+
+  void _invalidateAll() {
+    ref.invalidate(deviceByIdProvider(widget.deviceId));
+    ref.invalidate(latestHeartbeatProvider(widget.deviceId));
+    ref.invalidate(recentEventsProvider(widget.deviceId));
+    ref.invalidate(eventTypeCountsProvider(widget.deviceId));
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final deviceId = widget.deviceId;
     final deviceAsync = ref.watch(deviceByIdProvider(deviceId));
     final heartbeatAsync = ref.watch(latestHeartbeatProvider(deviceId));
     final recentAsync = ref.watch(recentEventsProvider(deviceId));
@@ -34,22 +68,12 @@ class DashboardScreen extends ConsumerWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: () {
-              ref.invalidate(deviceByIdProvider(deviceId));
-              ref.invalidate(latestHeartbeatProvider(deviceId));
-              ref.invalidate(recentEventsProvider(deviceId));
-              ref.invalidate(eventTypeCountsProvider(deviceId));
-            },
+            onPressed: _invalidateAll,
           ),
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: () async {
-          ref.invalidate(deviceByIdProvider(deviceId));
-          ref.invalidate(latestHeartbeatProvider(deviceId));
-          ref.invalidate(recentEventsProvider(deviceId));
-          ref.invalidate(eventTypeCountsProvider(deviceId));
-        },
+        onRefresh: () async => _invalidateAll(),
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
@@ -69,6 +93,16 @@ class DashboardScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 16),
             _QuickActions(deviceId: deviceId),
+            const SizedBox(height: 16),
+            deviceAsync.when(
+              loading: () => const SizedBox.shrink(),
+              error: (_, _) => const SizedBox.shrink(),
+              data: (device) => device != null
+                  ? _ConnectionStatus(device: device)
+                  : const SizedBox.shrink(),
+            ),
+            const SizedBox(height: 16),
+            _DeviceManagement(deviceId: deviceId),
             const SizedBox(height: 16),
             countsAsync.when(
               loading: () => const SizedBox.shrink(),
@@ -97,7 +131,11 @@ class _DeviceHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final statusColor = device.isOnline ? Colors.green : Colors.grey;
+    final statusColor = device.isOnline
+        ? Colors.green
+        : device.isPairing
+            ? Colors.orange
+            : Colors.grey;
 
     return Card(
       child: Padding(
@@ -296,11 +334,26 @@ class _NoMetrics extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Text('No metrics received yet.',
-            style: Theme.of(context).textTheme.bodyMedium),
+        child: Column(
+          children: [
+            Icon(Icons.hourglass_empty,
+                size: 32, color: theme.colorScheme.outline),
+            const SizedBox(height: 8),
+            Text('No metrics received yet.',
+                style: theme.textTheme.bodyMedium),
+            const SizedBox(height: 4),
+            Text(
+              'Metrics will appear once the laptop agent is running and paired.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.outline),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -322,6 +375,7 @@ class _QuickActions extends StatelessWidget {
       _QA('Network', Icons.wifi, '/events/$deviceId/network'),
       _QA('Files', Icons.folder_open, '/events/$deviceId/files'),
       _QA('Event Log', Icons.article_outlined, '/events/$deviceId/eventlog'),
+      _QA('Remote', Icons.screen_share, '/remote/$deviceId'),
       _QA('Reports', Icons.bar_chart, '/reports/$deviceId'),
     ];
 
@@ -534,6 +588,180 @@ class _RecentEvents extends StatelessWidget {
   }
 }
 
+class _ConnectionStatus extends StatelessWidget {
+  final Device device;
+
+  const _ConnectionStatus({required this.device});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isOnline = device.isOnline;
+    final isPairing = device.isPairing;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Connection',
+                style: theme.textTheme.titleSmall
+                    ?.copyWith(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Container(
+                  width: 10,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: isOnline
+                        ? Colors.green
+                        : isPairing
+                            ? Colors.orange
+                            : Colors.grey,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  isOnline
+                      ? 'Online and paired'
+                      : isPairing
+                          ? 'Awaiting pairing'
+                          : 'Offline (paired)',
+                  style: theme.textTheme.bodyMedium,
+                ),
+              ],
+            ),
+            if (!isOnline && !isPairing) ...[
+              const SizedBox(height: 8),
+              Text(
+                'The laptop is offline but still paired. '
+                'It will reconnect automatically when it comes back online.',
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.outline),
+              ),
+            ],
+            if (isPairing) ...[
+              const SizedBox(height: 8),
+              Text(
+                'The device is registered but not yet paired. '
+                'Enter the pairing code shown in the agent log on the laptop.',
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.outline),
+              ),
+            ],
+            if (device.lastSeenAt != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Last seen: ${timeago.format(device.lastSeenAt!)}',
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.outline),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DeviceManagement extends ConsumerWidget {
+  final String deviceId;
+
+  const _DeviceManagement({required this.deviceId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Device Management',
+                style: theme.textTheme.titleSmall
+                    ?.copyWith(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => _confirmUnpair(context, ref),
+                icon: const Icon(Icons.link_off, size: 18),
+                label: const Text('Unpair Device'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: theme.colorScheme.error,
+                  side: BorderSide(color: theme.colorScheme.error.withValues(alpha: 0.5)),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Unpairing removes this device from your account. '
+              'The agent will generate a new pairing code so you can re-pair later.',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.outline),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _confirmUnpair(BuildContext context, WidgetRef ref) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Unpair Device?'),
+        content: const Text(
+          'This will remove the device from your account. '
+          'You can re-pair it later using a new pairing code.\n\n'
+          'The agent on the laptop will continue running and will '
+          'automatically generate a new code.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              _doUnpair(context, ref);
+            },
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('Unpair'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _doUnpair(BuildContext context, WidgetRef ref) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final router = GoRouter.of(context);
+    final service = DeviceService(ref.read(supabaseClientProvider));
+
+    try {
+      await service.unpairDevice(deviceId);
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Device unpaired successfully')),
+      );
+      ref.invalidate(devicesProvider);
+      router.go('/devices');
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Failed to unpair: $e')),
+      );
+    }
+  }
+}
+
 class _EventRow extends StatelessWidget {
   final ActivityEvent event;
 
@@ -571,5 +799,4 @@ class _EventRow extends StatelessWidget {
       ),
     );
   }
-
 }

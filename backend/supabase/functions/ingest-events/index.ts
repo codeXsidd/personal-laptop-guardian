@@ -70,6 +70,13 @@ Deno.serve(async (req) => {
     return errorResponse("Invalid device API key", 401);
   }
 
+  if (!device.user_id) {
+    return errorResponse(
+      "Device is not paired yet. Enter the pairing code in the mobile app first.",
+      403,
+    );
+  }
+
   let body: IngestRequest;
   try {
     body = await req.json();
@@ -132,10 +139,13 @@ Deno.serve(async (req) => {
     .update({ last_seen_at: new Date().toISOString(), status: "online" })
     .eq("id", device.id);
 
-  // Trigger notifications for newly inserted high-priority events
+  // Trigger notifications for newly inserted events (skip metrics)
+  const SKIP_NOTIFY = new Set(["system_metrics"]);
   if (insertedCount > 0) {
     const insertedIds = new Set((inserted ?? []).map((r: { id: string }) => r.id));
-    const notifyEvents = body.events.filter((e) => insertedIds.has(e.id));
+    const notifyEvents = body.events.filter(
+      (e) => insertedIds.has(e.id) && !SKIP_NOTIFY.has(e.event_type),
+    );
     if (notifyEvents.length > 0) {
       const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
       const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;

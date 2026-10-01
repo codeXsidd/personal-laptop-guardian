@@ -1,27 +1,23 @@
-import 'dart:ui';
-
-import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:window_manager/window_manager.dart';
 
 import 'app.dart';
-import 'firebase_options.dart';
-
-@pragma('vm:entry-point')
-Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-}
+import 'main_mobile.dart' as mobile;
+import 'platform/platform_utils.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  if (isMobilePlatform) {
+    await mobile.initMobile();
+  }
 
-  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  if (isDesktopPlatform) {
+    await _initDesktopWindow();
+  }
 
   final container = ProviderContainer();
 
@@ -38,4 +34,21 @@ void main() async {
     container: container,
     child: const LaptopGuardianApp(),
   ));
+}
+
+Future<void> _initDesktopWindow() async {
+  await windowManager.ensureInitialized();
+
+  const windowOptions = WindowOptions(
+    size: Size(1366, 768),
+    minimumSize: Size(1024, 600),
+    center: true,
+    title: 'Laptop Guardian',
+    titleBarStyle: TitleBarStyle.normal,
+  );
+
+  await windowManager.waitUntilReadyToShow(windowOptions, () async {
+    await windowManager.show();
+    await windowManager.focus();
+  });
 }

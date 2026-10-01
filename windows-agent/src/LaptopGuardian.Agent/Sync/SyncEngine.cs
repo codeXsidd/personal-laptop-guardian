@@ -89,12 +89,24 @@ public sealed class SyncEngine : ISyncEngine
         }
     }
 
+    public void ResetBackoff()
+    {
+        _consecutiveFailures = 0;
+        _logger.LogInformation("Sync backoff reset — will attempt sync immediately");
+    }
+
     internal async Task SyncBatchAsync(CancellationToken ct)
     {
         var identity = await _identityService.GetOrCreateIdentityAsync(ct);
         if (!identity.IsRegistered || identity.ApiKey is null)
         {
             _logger.LogDebug("Device not registered, skipping sync");
+            return;
+        }
+
+        if (!identity.IsPaired)
+        {
+            _logger.LogDebug("Device not paired yet, skipping sync");
             return;
         }
 

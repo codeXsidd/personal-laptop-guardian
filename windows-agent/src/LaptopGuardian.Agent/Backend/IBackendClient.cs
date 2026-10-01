@@ -19,4 +19,12 @@ public interface IBackendClient
         string apiKey,
         Dictionary<string, object>? metrics = null,
         CancellationToken cancellationToken = default);
+
+    Task<RefreshPairingCodeResponse> RefreshPairingCodeAsync(
+        string apiKey,
+        CancellationToken cancellationToken = default);
+
+    Task UnpairDeviceAsync(
+        string apiKey,
+        CancellationToken cancellationToken = default);
 }

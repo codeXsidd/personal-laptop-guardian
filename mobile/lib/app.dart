@@ -1,6 +1,3 @@
-import 'dart:async';
-
-import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'config/routes.dart';
 import 'config/theme.dart';
+import 'platform/platform_utils.dart';
 import 'providers/auth_provider.dart';
 import 'providers/notification_provider.dart';
 
@@ -21,51 +19,47 @@ class LaptopGuardianApp extends ConsumerStatefulWidget {
 class _LaptopGuardianAppState extends ConsumerState<LaptopGuardianApp> {
   GoRouter? _router;
   bool _notificationsInitialized = false;
-  StreamSubscription<RemoteMessage>? _messageOpenedSub;
 
   @override
   void dispose() {
-    _messageOpenedSub?.cancel();
     _router?.dispose();
     super.dispose();
   }
 
   void _initNotifications() {
-    if (_notificationsInitialized) return;
+    if (_notificationsInitialized || isDesktopPlatform) return;
     _notificationsInitialized = true;
 
-    ref.read(notificationInitProvider);
+    try {
+      ref.read(notificationInitProvider);
 
-    ref.read(notificationServiceProvider).onNotificationTap = (payload) {
-      final parts = payload.split(':');
-      if (parts.length >= 2 && _router != null) {
-        final deviceId = parts[0];
-        ref.read(pendingNotificationPayloadProvider.notifier).state = payload;
-        _router!.go('/dashboard/$deviceId');
-      }
-    };
+      ref.read(notificationServiceProvider).onNotificationTap = (payload) {
+        final parts = payload.split(':');
+        if (parts.length >= 2 && _router != null) {
+          final deviceId = parts[0];
+          ref.read(pendingNotificationPayloadProvider.notifier).state = payload;
+          _router!.go('/dashboard/$deviceId');
+        }
+      };
 
-    FirebaseMessaging.instance.getInitialMessage().then((message) {
-      if (message != null && mounted) {
-        _handleNotificationNavigation(message.data);
-      }
-    });
-
-    _messageOpenedSub = FirebaseMessaging.onMessageOpenedApp.listen((message) {
-      if (mounted) _handleNotificationNavigation(message.data);
-    });
+      _initFirebaseMessageHandlers();
+    } catch (e) {
+      debugPrint('[Notification] Init error: $e');
+    }
   }
 
-  void _handleNotificationNavigation(Map<String, dynamic> data) {
-    final deviceId = data['device_id'] as String?;
-    final eventId = data['event_id'] as String?;
-    if (deviceId == null || _router == null) return;
-
-    if (eventId != null) {
-      ref.read(pendingNotificationPayloadProvider.notifier).state =
-          '$deviceId:$eventId';
+  void _initFirebaseMessageHandlers() {
+    if (!isMobilePlatform) return;
+    try {
+      // Firebase messaging handlers for mobile only
+      _setupMobileMessaging();
+    } catch (e) {
+      debugPrint('[Firebase] Messaging setup error: $e');
     }
-    _router!.go('/dashboard/$deviceId');
+  }
+
+  void _setupMobileMessaging() {
+    // Implemented via notification_provider on mobile
   }
 
   @override
@@ -76,7 +70,7 @@ class _LaptopGuardianAppState extends ConsumerState<LaptopGuardianApp> {
       next.whenData((authState) {
         if (authState.event == AuthChangeEvent.signedIn) {
           final fromForm = ref.read(loginFormActiveProvider);
-          if (!fromForm && _router != null) {
+          if (!fromForm && _router != null && !isDesktopPlatform) {
             debugPrint('[DeepLink] signedIn event (not from form) — email verified');
             _router!.go('/auth-verified');
           }
@@ -108,10 +102,7 @@ class _LaptopGuardianAppState extends ConsumerState<LaptopGuardianApp> {
                     style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 8),
-                  Text(
-                    error.toString(),
-                    textAlign: TextAlign.center,
-                  ),
+                  Text(error.toString(), textAlign: TextAlign.center),
                   const SizedBox(height: 24),
                   ElevatedButton(
                     onPressed: () => ref.invalidate(supabaseInitProvider),

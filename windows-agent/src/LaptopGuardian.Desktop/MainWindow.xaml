@@ -1,0 +1,92 @@
+<Window x:Class="LaptopGuardian.Desktop.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:LaptopGuardian.Desktop.ViewModels"
+        mc:Ignorable="d"
+        d:DataContext="{d:DesignInstance vm:MainViewModel}"
+        Title="Laptop Guardian" Height="700" Width="1100" MinWidth="900" MinHeight="600"
+        WindowStartupLocation="CenterScreen" Background="{StaticResource ContentBgBrush}">
+    <Grid>
+        <!-- Main App Content -->
+        <Grid x:Name="MainContent">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="240"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Sidebar -->
+            <Border Grid.Column="0" Background="{StaticResource SidebarBgBrush}">
+            <Border.Resources>
+                <Style TargetType="RadioButton">
+                    <Setter Property="Foreground" Value="{StaticResource SidebarTextBrush}"/>
+                    <Setter Property="FontSize" Value="13"/>
+                    <Setter Property="Padding" Value="12,10"/>
+                    <Setter Property="Margin" Value="0,2"/>
+                    <Setter Property="Cursor" Value="Hand"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="RadioButton">
+                                <Border x:Name="Bd" Background="Transparent" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                                    <ContentPresenter VerticalAlignment="Center"/>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="Bd" Property="Background" Value="{StaticResource SidebarHoverBrush}"/>
+                                    </Trigger>
+                                    <Trigger Property="IsChecked" Value="True">
+                                        <Setter TargetName="Bd" Property="Background" Value="{StaticResource SidebarActiveBrush}"/>
+                                        <Setter Property="Foreground" Value="White"/>
+                                        <Setter Property="FontWeight" Value="SemiBold"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </Border.Resources>
+
+            <DockPanel>
+                <!-- App Title -->
+                <StackPanel DockPanel.Dock="Top" Margin="20,24,20,32">
+                    <TextBlock Text="&#x1F6E1;" FontSize="28" Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,8"/>
+                    <TextBlock Text="Laptop Guardian" FontSize="18" FontWeight="Bold" Foreground="White"/>
+                    <TextBlock Text="Device Monitor" FontSize="11" Foreground="{StaticResource SidebarTextBrush}" Margin="0,2,0,0"/>
+                </StackPanel>
+
+                <!-- Version -->
+                <TextBlock DockPanel.Dock="Bottom" Text="v1.0.0" FontSize="10" Foreground="{StaticResource SidebarTextBrush}" Margin="20,0,0,16" Opacity="0.5"/>
+
+                <!-- Nav Items -->
+                <StackPanel Margin="8,0">
+                    <RadioButton Content="&#x1F4CA;  Dashboard" IsChecked="True" GroupName="Nav"
+                                 Command="{Binding NavigateCommand}" CommandParameter="Dashboard"/>
+                    <RadioButton Content="&#x1F4F1;  Pair Phone" GroupName="Nav"
+                                 Command="{Binding NavigateCommand}" CommandParameter="PairPhone"/>
+                    <RadioButton Content="&#x1F4C3;  Activity" GroupName="Nav"
+                                 Command="{Binding NavigateCommand}" CommandParameter="Activity"/>
+                    <RadioButton Content="&#x1F4BB;  Device" GroupName="Nav"
+                                 Command="{Binding NavigateCommand}" CommandParameter="Device"/>
+                    <RadioButton Content="&#x1F5A5;  Remote Access" GroupName="Nav"
+                                 Command="{Binding NavigateCommand}" CommandParameter="RemoteAccess"/>
+                    <RadioButton Content="&#x2699;  Settings" GroupName="Nav"
+                                 Command="{Binding NavigateCommand}" CommandParameter="Settings"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+            <!-- Main Content Area -->
+            <Border Grid.Column="1" Padding="32,24">
+                <ContentControl Content="{Binding CurrentView}"/>
+            </Border>
+        </Grid>
+
+        <!-- PIN Lock Overlay -->
+        <Grid x:Name="PinLockOverlay"
+              Background="White"
+              Visibility="{Binding IsAppLocked, Converter={StaticResource BoolToVis}}">
+            <ContentControl Content="{Binding PinLock}"/>
+        </Grid>
+    </Grid>
+</Window>

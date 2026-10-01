@@ -60,7 +60,7 @@ public sealed class HeartbeatServiceTests : IDisposable
     public async Task SendHeartbeatAsync_DetectsPairing()
     {
         _backendClient.SendHeartbeatAsync(Arg.Any<string>(), Arg.Any<Dictionary<string, object>?>(), Arg.Any<CancellationToken>())
-            .Returns(new HeartbeatResponse("ok", "server-device-id", DateTimeOffset.UtcNow));
+            .Returns(new HeartbeatResponse("ok", "server-device-id", DateTimeOffset.UtcNow, true));
 
         var paired = false;
         _heartbeatService.DevicePaired += (_, _) => paired = true;
@@ -87,7 +87,7 @@ public sealed class HeartbeatServiceTests : IDisposable
     public async Task SendHeartbeatAsync_DoesNotFirePairedEventTwice()
     {
         _backendClient.SendHeartbeatAsync(Arg.Any<string>(), Arg.Any<Dictionary<string, object>?>(), Arg.Any<CancellationToken>())
-            .Returns(new HeartbeatResponse("ok", "server-device-id", DateTimeOffset.UtcNow));
+            .Returns(new HeartbeatResponse("ok", "server-device-id", DateTimeOffset.UtcNow, true));
 
         var pairedCount = 0;
         _heartbeatService.DevicePaired += (_, _) => pairedCount++;
@@ -114,7 +114,7 @@ public sealed class HeartbeatServiceTests : IDisposable
     public async Task SendHeartbeatAsync_SendsCorrectApiKey()
     {
         _backendClient.SendHeartbeatAsync(Arg.Any<string>(), Arg.Any<Dictionary<string, object>?>(), Arg.Any<CancellationToken>())
-            .Returns(new HeartbeatResponse("ok", "device-id", DateTimeOffset.UtcNow));
+            .Returns(new HeartbeatResponse("ok", "device-id", DateTimeOffset.UtcNow, true));
 
         await _heartbeatService.SendHeartbeatAsync(CancellationToken.None);
 
@@ -137,7 +137,7 @@ public sealed class HeartbeatServiceTests : IDisposable
     public async Task SendHeartbeatAsync_DetectsRevocation()
     {
         _backendClient.SendHeartbeatAsync(Arg.Any<string>(), Arg.Any<Dictionary<string, object>?>(), Arg.Any<CancellationToken>())
-            .Returns(new HeartbeatResponse("ok", "device-id", DateTimeOffset.UtcNow));
+            .Returns(new HeartbeatResponse("ok", "device-id", DateTimeOffset.UtcNow, true));
 
         await _heartbeatService.SendHeartbeatAsync(CancellationToken.None);
         Assert.True(_heartbeatService.IsPaired);
@@ -147,5 +147,52 @@ public sealed class HeartbeatServiceTests : IDisposable
 
         await _heartbeatService.SendHeartbeatAsync(CancellationToken.None);
         Assert.False(_heartbeatService.IsPaired);
+    }
+
+    [Fact]
+    public async Task SendHeartbeatAsync_DetectsRemoteUnpair()
+    {
+        _backendClient.SendHeartbeatAsync(Arg.Any<string>(), Arg.Any<Dictionary<string, object>?>(), Arg.Any<CancellationToken>())
+            .Returns(new HeartbeatResponse("ok", "device-id", DateTimeOffset.UtcNow, true));
+
+        await _heartbeatService.SendHeartbeatAsync(CancellationToken.None);
+        Assert.True(_heartbeatService.IsPaired);
+
+        _backendClient.SendHeartbeatAsync(Arg.Any<string>(), Arg.Any<Dictionary<string, object>?>(), Arg.Any<CancellationToken>())
+            .Returns(new HeartbeatResponse("ok", "device-id", DateTimeOffset.UtcNow, false));
+
+        await _heartbeatService.SendHeartbeatAsync(CancellationToken.None);
+        Assert.False(_heartbeatService.IsPaired);
+        Assert.Null(_identity.PairedAt);
+        await _identityService.Received().SaveIdentityAsync(
+            Arg.Is<DeviceIdentity>(i => i.PairedAt == null), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task StartAsync_RestoresPairedStateFromIdentity()
+    {
+        _identity.PairedAt = DateTimeOffset.UtcNow.AddHours(-1);
+
+        await _heartbeatService.StartAsync(CancellationToken.None);
+
+        Assert.True(_heartbeatService.IsPaired);
+
+        await _heartbeatService.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task SendHeartbeatAsync_DoesNotOverwriteExistingPairedAt()
+    {
+        var originalPairedAt = DateTimeOffset.UtcNow.AddHours(-2);
+        _identity.PairedAt = originalPairedAt;
+
+        _backendClient.SendHeartbeatAsync(Arg.Any<string>(), Arg.Any<Dictionary<string, object>?>(), Arg.Any<CancellationToken>())
+            .Returns(new HeartbeatResponse("ok", "device-id", DateTimeOffset.UtcNow, true));
+
+        await _heartbeatService.SendHeartbeatAsync(CancellationToken.None);
+
+        Assert.True(_heartbeatService.IsPaired);
+        Assert.Equal(originalPairedAt, _identity.PairedAt);
+        await _identityService.DidNotReceive().SaveIdentityAsync(Arg.Any<DeviceIdentity>(), Arg.Any<CancellationToken>());
     }
 }

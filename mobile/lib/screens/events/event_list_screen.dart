@@ -527,17 +527,13 @@ String eventSubtitle(ActivityEvent e) {
       p['username']?.toString() ?? '',
     'login_failed' =>
       '${p['username'] ?? 'Unknown'} - ${p['failure_reason'] ?? ''}',
-    'process_start' => '${p['process_name'] ?? ''} (PID ${p['pid'] ?? ''})',
-    'process_stop' =>
-      '${p['process_name'] ?? ''} ran ${p['duration_s'] ?? 0}s',
+    'process_start' => _processStartSubtitle(p),
+    'process_stop' => _processStopSubtitle(p),
     'usb_connected' || 'usb_disconnected' =>
       p['device_name']?.toString() ?? '',
-    'network_connected' =>
-      '${p['adapter_name'] ?? ''} ${p['ip_address'] ?? ''}',
+    'network_connected' || 'network_changed' => _networkSubtitle(p),
     'network_disconnected' =>
       p['adapter_name']?.toString() ?? '',
-    'network_changed' =>
-      '${p['adapter_name'] ?? ''} ${p['old_ip'] ?? ''} → ${p['new_ip'] ?? ''}',
     'eventlog_entry' =>
       '[${p['level'] ?? ''}] ${p['source'] ?? ''}: ${p['message'] ?? ''}',
     'file_access' =>
@@ -548,4 +544,48 @@ String eventSubtitle(ActivityEvent e) {
     'system_startup' || 'system_shutdown' => '',
     _ => '',
   };
+}
+
+String _processStartSubtitle(Map<String, dynamic> p) {
+  final name = p['process_name'] ?? '';
+  final title = p['window_title'];
+  if (title != null && title.toString().isNotEmpty) {
+    return '$name — $title';
+  }
+  return '$name (PID ${p['pid'] ?? ''})';
+}
+
+String _processStopSubtitle(Map<String, dynamic> p) {
+  final name = p['process_name'] ?? '';
+  final dur = p['duration_seconds'] ?? p['duration_s'];
+  if (dur != null) {
+    final secs = (dur is num) ? dur.toInt() : int.tryParse(dur.toString()) ?? 0;
+    if (secs >= 3600) {
+      return '$name ran ${secs ~/ 3600}h ${(secs % 3600) ~/ 60}m';
+    } else if (secs >= 60) {
+      return '$name ran ${secs ~/ 60}m ${secs % 60}s';
+    }
+    return '$name ran ${secs}s';
+  }
+  return '$name (PID ${p['pid'] ?? ''})';
+}
+
+String _networkSubtitle(Map<String, dynamic> p) {
+  final adapters = p['adapters'];
+  if (adapters is List && adapters.isNotEmpty) {
+    final first = adapters[0];
+    if (first is Map) {
+      final ssid = first['ssid'];
+      final ipv4 = first['ipv4'];
+      final signal = first['signal'];
+      final parts = <String>[];
+      if (ssid != null) parts.add(ssid.toString());
+      if (ipv4 != null) parts.add(ipv4.toString());
+      if (signal != null) parts.add(signal.toString());
+      if (parts.isNotEmpty) return parts.join(' · ');
+    }
+  }
+  final adapterName = p['adapter_name'];
+  final ip = p['ip_address'] ?? p['ipv4'];
+  return '${adapterName ?? ''} ${ip ?? ''}'.trim();
 }

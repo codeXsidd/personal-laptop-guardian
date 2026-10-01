@@ -47,13 +47,31 @@ class PairingService {
     );
 
     if (response.status != 200) {
-      final error = response.data is Map
-          ? response.data['error'] as String? ?? 'Pairing failed'
-          : 'Pairing failed (${response.status})';
-      throw PairingException(error);
+      final rawError = response.data is Map
+          ? response.data['error'] as String? ?? ''
+          : '';
+      throw PairingException(_friendlyError(rawError, response.status));
     }
 
     return PairingResult.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  String _friendlyError(String raw, int status) {
+    final lower = raw.toLowerCase();
+    if (lower.contains('expired')) {
+      return 'Pairing code has expired. Open the Guardian agent log on your laptop to get a new code.';
+    }
+    if (lower.contains('already paired') || status == 409) {
+      return 'This device has already been paired to an account.';
+    }
+    if (lower.contains('invalid') || lower.contains('not found')) {
+      return 'Invalid pairing code. Check the 6-character code shown in the Guardian agent log on your laptop.';
+    }
+    if (status == 401) {
+      return 'Please sign in again to pair a device.';
+    }
+    if (raw.isNotEmpty) return raw;
+    return 'Pairing failed (error $status). Please try again.';
   }
 }
 

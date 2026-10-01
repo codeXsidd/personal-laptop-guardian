@@ -1,5 +1,7 @@
+using System.Diagnostics;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Runtime.Versioning;
 using LaptopGuardian.Agent.Identity;
 using LaptopGuardian.Agent.Models;
 using LaptopGuardian.Agent.Storage;
@@ -117,6 +119,7 @@ public sealed class NetworkMonitor : IEventMonitor
 
     internal static List<AdapterInfo> GetActiveAdapters()
     {
+        var wlanInfo = OperatingSystem.IsWindows() ? GetWlanInterfaces() : [];
         var adapters = new List<AdapterInfo>();
 
         try
@@ -150,12 +153,20 @@ public sealed class NetworkMonitor : IEventMonitor
                     // Some adapters don't support IP properties
                 }
 
+                wlanInfo.TryGetValue(nic.Name, out var wlan);
+
                 adapters.Add(new AdapterInfo(
                     nic.Name,
                     nic.NetworkInterfaceType.ToString(),
                     ipv4,
                     ipv6,
-                    nic.OperationalStatus.ToString()));
+                    nic.OperationalStatus.ToString(),
+                    wlan?.Ssid,
+                    wlan?.Bssid,
+                    wlan?.Signal,
+                    wlan?.RadioType,
+                    wlan?.Authentication,
+                    wlan?.Channel));
             }
         }
         catch (NetworkInformationException)
@@ -188,6 +199,18 @@ public sealed class NetworkMonitor : IEventMonitor
                     entry["ipv4"] = adapter.IPv4;
                 if (adapter.IPv6 is not null)
                     entry["ipv6"] = adapter.IPv6;
+                if (adapter.Ssid is not null)
+                    entry["ssid"] = adapter.Ssid;
+                if (adapter.Bssid is not null)
+                    entry["bssid"] = adapter.Bssid;
+                if (adapter.Signal is not null)
+                    entry["signal"] = adapter.Signal;
+                if (adapter.RadioType is not null)
+                    entry["radio_type"] = adapter.RadioType;
+                if (adapter.Authentication is not null)
+                    entry["authentication"] = adapter.Authentication;
+                if (adapter.Channel is not null)
+                    entry["channel"] = adapter.Channel;
                 adapterList.Add(entry);
             }
 
@@ -220,10 +243,104 @@ public sealed class NetworkMonitor : IEventMonitor
         }
     }
 
+    [SupportedOSPlatform("windows")]
+    internal static Dictionary<string, WlanInfo> GetWlanInterfaces()
+    {
+        var result = new Dictionary<string, WlanInfo>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            using var process = new Process();
+            process.StartInfo = new ProcessStartInfo
+            {
+                FileName = "netsh",
+                Arguments = "wlan show interfaces",
+                RedirectStandardOutput = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            process.Start();
+            var output = process.StandardOutput.ReadToEnd();
+            process.WaitForExit(5000);
+
+            string? currentName = null;
+            string? ssid = null;
+            string? bssid = null;
+            string? signal = null;
+            string? radioType = null;
+            string? authentication = null;
+            string? channel = null;
+
+            foreach (var rawLine in output.Split('\n'))
+            {
+                var line = rawLine.Trim();
+                if (line.StartsWith("Name", StringComparison.OrdinalIgnoreCase) && line.Contains(':'))
+                {
+                    if (currentName is not null && ssid is not null)
+                    {
+                        result[currentName] = new WlanInfo(ssid, bssid, signal, radioType, authentication, channel);
+                    }
+                    currentName = line[(line.IndexOf(':') + 1)..].Trim();
+                    ssid = bssid = signal = radioType = authentication = channel = null;
+                }
+                else if (line.StartsWith("SSID", StringComparison.OrdinalIgnoreCase)
+                         && !line.StartsWith("BSSID", StringComparison.OrdinalIgnoreCase)
+                         && line.Contains(':'))
+                {
+                    ssid = line[(line.IndexOf(':') + 1)..].Trim();
+                }
+                else if (line.StartsWith("BSSID", StringComparison.OrdinalIgnoreCase) && line.Contains(':'))
+                {
+                    bssid = line[(line.IndexOf(':') + 1)..].Trim();
+                }
+                else if (line.StartsWith("Signal", StringComparison.OrdinalIgnoreCase) && line.Contains(':'))
+                {
+                    signal = line[(line.IndexOf(':') + 1)..].Trim();
+                }
+                else if (line.StartsWith("Radio type", StringComparison.OrdinalIgnoreCase) && line.Contains(':'))
+                {
+                    radioType = line[(line.IndexOf(':') + 1)..].Trim();
+                }
+                else if (line.StartsWith("Authentication", StringComparison.OrdinalIgnoreCase) && line.Contains(':'))
+                {
+                    authentication = line[(line.IndexOf(':') + 1)..].Trim();
+                }
+                else if (line.StartsWith("Channel", StringComparison.OrdinalIgnoreCase) && line.Contains(':'))
+                {
+                    channel = line[(line.IndexOf(':') + 1)..].Trim();
+                }
+            }
+
+            if (currentName is not null && ssid is not null)
+            {
+                result[currentName] = new WlanInfo(ssid, bssid, signal, radioType, authentication, channel);
+            }
+        }
+        catch
+        {
+            // netsh not available or failed
+        }
+
+        return result;
+    }
+
     internal sealed record AdapterInfo(
         string Name,
         string Type,
         string? IPv4,
         string? IPv6,
-        string Status);
+        string Status,
+        string? Ssid = null,
+        string? Bssid = null,
+        string? Signal = null,
+        string? RadioType = null,
+        string? Authentication = null,
+        string? Channel = null);
+
+    internal sealed record WlanInfo(
+        string Ssid,
+        string? Bssid,
+        string? Signal,
+        string? RadioType,
+        string? Authentication,
+        string? Channel);
 }

@@ -95,15 +95,20 @@ Deno.serve(async (req) => {
     return errorResponse("Failed to record heartbeat", 500);
   }
 
-  // Update device status and last_seen
+  // Update device last_seen; only promote to "online" if already paired
+  const updateFields: Record<string, unknown> = { last_seen_at: now };
+  if (device.user_id) {
+    updateFields.status = "online";
+  }
   await admin
     .from("devices")
-    .update({ last_seen_at: now, status: "online" })
+    .update(updateFields)
     .eq("id", device.id);
 
   return jsonResponse({
     status: "ok",
     device_id: device.id,
     server_time: now,
+    is_paired: device.user_id !== null,
   });
 });

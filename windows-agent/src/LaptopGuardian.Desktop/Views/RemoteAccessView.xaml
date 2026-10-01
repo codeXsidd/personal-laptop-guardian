@@ -1,0 +1,83 @@
+<UserControl x:Class="LaptopGuardian.Desktop.Views.RemoteAccessView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:LaptopGuardian.Desktop.ViewModels"
+             mc:Ignorable="d" d:DataContext="{d:DesignInstance vm:RemoteAccessViewModel}">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,8,0">
+        <StackPanel MaxWidth="550" HorizontalAlignment="Left">
+            <TextBlock Text="Remote PC Access" Style="{StaticResource Heading}"/>
+
+            <!-- Status Card -->
+            <Border Style="{StaticResource CardBorder}">
+                <StackPanel>
+                    <TextBlock Text="Session Status" Style="{StaticResource SubHeading}"/>
+                    <TextBlock Text="{Binding Status}" TextWrapping="Wrap" Margin="0,4,0,0" FontSize="13"
+                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Pending Request Card -->
+            <Border Style="{StaticResource CardBorder}"
+                    Visibility="{Binding HasPendingRequest, Converter={StaticResource BoolToVis}}">
+                <StackPanel>
+                    <TextBlock Text="Incoming Request" Style="{StaticResource SubHeading}" Foreground="{StaticResource WarningBrush}"/>
+                    <TextBlock Text="Your mobile phone is requesting remote access to this PC."
+                               TextWrapping="Wrap" FontSize="13" Margin="0,4,0,12"
+                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                    <TextBlock Text="Only approve if you initiated this request from your phone."
+                               TextWrapping="Wrap" FontSize="12" Margin="0,0,0,12"
+                               Foreground="{StaticResource TextSecondaryBrush}"/>
+
+                    <StackPanel Orientation="Horizontal">
+                        <Button Content="Approve" Style="{StaticResource PrimaryButton}" Padding="24,10" Margin="0,0,8,0"
+                                Command="{Binding ApproveCommand}" IsEnabled="{Binding IsProcessing, Converter={StaticResource InverseBool}}"/>
+                        <Button Content="Reject" Style="{StaticResource DangerButton}" Padding="24,10"
+                                Command="{Binding RejectCommand}" IsEnabled="{Binding IsProcessing, Converter={StaticResource InverseBool}}"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Active Session Card -->
+            <Border Style="{StaticResource CardBorder}"
+                    Visibility="{Binding HasActiveSession, Converter={StaticResource BoolToVis}}">
+                <StackPanel>
+                    <TextBlock Text="Active Remote Session" Style="{StaticResource SubHeading}" Foreground="{StaticResource AccentBrush}"/>
+                    <TextBlock Text="Your phone is currently viewing this PC's screen."
+                               TextWrapping="Wrap" FontSize="13" Margin="0,4,0,4"
+                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                    <TextBlock Text="The session will automatically end after 15 minutes."
+                               FontSize="12" Margin="0,0,0,12"
+                               Foreground="{StaticResource TextSecondaryBrush}"/>
+
+                    <Button Content="End Session" Style="{StaticResource DangerButton}" Padding="24,10"
+                            Command="{Binding EndSessionCommand}"
+                            IsEnabled="{Binding IsProcessing, Converter={StaticResource InverseBool}}"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Info Card -->
+            <Border Style="{StaticResource CardBorder}">
+                <StackPanel>
+                    <TextBlock Text="How It Works" Style="{StaticResource SubHeading}"/>
+                    <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}">
+                        <Run Text="1. Open the Laptop Guardian app on your phone"/>
+                        <LineBreak/>
+                        <Run Text="2. Navigate to a device and tap 'Remote Access'"/>
+                        <LineBreak/>
+                        <Run Text="3. A request will appear here for your approval"/>
+                        <LineBreak/>
+                        <Run Text="4. Once approved, your phone can view this PC's screen"/>
+                        <LineBreak/><LineBreak/>
+                        <Run FontWeight="SemiBold" Text="Security: "/>
+                        <Run Text="Sessions require explicit approval, are relayed through an encrypted connection, and automatically expire after 15 minutes. You can end a session at any time."/>
+                        <LineBreak/><LineBreak/>
+                        <Run FontWeight="SemiBold" Text="Note: "/>
+                        <Run Text="Remote viewing is currently read-only. Your phone can see the screen but cannot control mouse or keyboard."/>
+                    </TextBlock>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

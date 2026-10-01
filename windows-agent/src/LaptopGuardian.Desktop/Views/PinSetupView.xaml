@@ -1,0 +1,143 @@
+<UserControl x:Class="LaptopGuardian.Desktop.Views.PinSetupView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:LaptopGuardian.Desktop.ViewModels"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance vm:PinSetupViewModel}">
+    <Border Style="{StaticResource CardBorder}">
+        <StackPanel>
+            <TextBlock Text="&#x1F510; PIN Lock" Style="{StaticResource SubHeading}"/>
+            <TextBlock Text="Protect the desktop app with a PIN. The monitoring service continues running even when locked."
+                       Style="{StaticResource Caption}"
+                       TextWrapping="Wrap"
+                       Margin="0,0,0,20"/>
+
+            <!-- Success Message -->
+            <Border Background="#E8F5E9"
+                    BorderBrush="#4CAF50"
+                    BorderThickness="1"
+                    CornerRadius="6"
+                    Padding="12,8"
+                    Margin="0,0,0,12"
+                    Visibility="{Binding SuccessMessage, Converter={StaticResource BoolToVis}}">
+                <TextBlock Text="{Binding SuccessMessage}"
+                           Foreground="#2E7D32"
+                           FontSize="12"/>
+            </Border>
+
+            <!-- Error Message -->
+            <Border Background="#FFEBEE"
+                    BorderBrush="#F44336"
+                    BorderThickness="1"
+                    CornerRadius="6"
+                    Padding="12,8"
+                    Margin="0,0,0,12"
+                    Visibility="{Binding ErrorMessage, Converter={StaticResource BoolToVis}}">
+                <TextBlock Text="{Binding ErrorMessage}"
+                           Foreground="#C62828"
+                           FontSize="12"/>
+            </Border>
+
+            <!-- Set PIN (No existing PIN) -->
+            <StackPanel Visibility="{Binding HasExistingPin, Converter={StaticResource BoolToVis}, ConverterParameter=Invert}">
+                <TextBlock Text="New PIN (4-8 digits)" FontSize="12" Margin="0,0,0,4">
+                    <TextBlock.Foreground>
+                        <SolidColorBrush Color="{StaticResource TextSecondaryColor}"/>
+                    </TextBlock.Foreground>
+                </TextBlock>
+                <PasswordBox x:Name="NewPinBox"
+                             MaxLength="8"
+                             Margin="0,0,0,12"
+                             PasswordChanged="OnNewPinChanged"
+                             Height="36"
+                             Padding="12,8"
+                             FontSize="13"
+                             BorderThickness="1"
+                             BorderBrush="{StaticResource BorderBrush}"/>
+
+                <TextBlock Text="Confirm PIN" FontSize="12" Margin="0,0,0,4">
+                    <TextBlock.Foreground>
+                        <SolidColorBrush Color="{StaticResource TextSecondaryColor}"/>
+                    </TextBlock.Foreground>
+                </TextBlock>
+                <PasswordBox x:Name="ConfirmPinBox"
+                             MaxLength="8"
+                             Margin="0,0,0,16"
+                             PasswordChanged="OnConfirmPinChanged"
+                             Height="36"
+                             Padding="12,8"
+                             FontSize="13"
+                             BorderThickness="1"
+                             BorderBrush="{StaticResource BorderBrush}"/>
+
+                <Button Content="Set PIN"
+                        Command="{Binding SetPinCommand}"
+                        Style="{StaticResource PrimaryButton}"
+                        Width="120"
+                        HorizontalAlignment="Left"/>
+            </StackPanel>
+
+            <!-- Change/Remove PIN (Existing PIN) -->
+            <StackPanel Visibility="{Binding HasExistingPin, Converter={StaticResource BoolToVis}}">
+                <TextBlock Text="Current PIN" FontSize="12" Margin="0,0,0,4">
+                    <TextBlock.Foreground>
+                        <SolidColorBrush Color="{StaticResource TextSecondaryColor}"/>
+                    </TextBlock.Foreground>
+                </TextBlock>
+                <PasswordBox x:Name="CurrentPinBox"
+                             MaxLength="8"
+                             Margin="0,0,0,12"
+                             PasswordChanged="OnCurrentPinChanged"
+                             Height="36"
+                             Padding="12,8"
+                             FontSize="13"
+                             BorderThickness="1"
+                             BorderBrush="{StaticResource BorderBrush}"/>
+
+                <TextBlock Text="New PIN (4-8 digits)" FontSize="12" Margin="0,0,0,4">
+                    <TextBlock.Foreground>
+                        <SolidColorBrush Color="{StaticResource TextSecondaryColor}"/>
+                    </TextBlock.Foreground>
+                </TextBlock>
+                <PasswordBox x:Name="NewPinBox2"
+                             MaxLength="8"
+                             Margin="0,0,0,12"
+                             PasswordChanged="OnNewPinChanged"
+                             Height="36"
+                             Padding="12,8"
+                             FontSize="13"
+                             BorderThickness="1"
+                             BorderBrush="{StaticResource BorderBrush}"/>
+
+                <TextBlock Text="Confirm New PIN" FontSize="12" Margin="0,0,0,4">
+                    <TextBlock.Foreground>
+                        <SolidColorBrush Color="{StaticResource TextSecondaryColor}"/>
+                    </TextBlock.Foreground>
+                </TextBlock>
+                <PasswordBox x:Name="ConfirmPinBox2"
+                             MaxLength="8"
+                             Margin="0,0,0,16"
+                             PasswordChanged="OnConfirmPinChanged"
+                             Height="36"
+                             Padding="12,8"
+                             FontSize="13"
+                             BorderThickness="1"
+                             BorderBrush="{StaticResource BorderBrush}"/>
+
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,0">
+                    <Button Content="Change PIN"
+                            Command="{Binding ChangePinCommand}"
+                            Style="{StaticResource PrimaryButton}"
+                            Width="120"
+                            Margin="0,0,12,0"/>
+                    <Button Content="Remove PIN"
+                            Command="{Binding RemovePinCommand}"
+                            Style="{StaticResource DangerButton}"
+                            Width="120"/>
+                </StackPanel>
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</UserControl>

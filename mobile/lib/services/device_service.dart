@@ -32,6 +32,20 @@ class DeviceService {
         .update({'device_name': name}).eq('id', deviceId);
   }
 
+  Future<void> unpairDevice(String deviceId) async {
+    final response = await _client.functions.invoke(
+      'unpair-device',
+      body: {'device_id': deviceId},
+    );
+
+    if (response.status != 200) {
+      final rawError = response.data is Map
+          ? response.data['error'] as String? ?? ''
+          : '';
+      throw Exception(rawError.isNotEmpty ? rawError : 'Failed to unpair device');
+    }
+  }
+
   Future<List<Heartbeat>> getHeartbeats(
     String deviceId, {
     int limit = 60,

@@ -88,6 +88,8 @@ public sealed class Worker : BackgroundService
             await _connectivityTracker.StartAsync(stoppingToken);
             _logger.LogInformation("Connectivity tracker started");
 
+            _heartbeatService.DevicePaired += (_, _) => _syncEngine.ResetBackoff();
+
             await _heartbeatService.StartAsync(stoppingToken);
             _logger.LogInformation("Heartbeat service started");
 
@@ -150,10 +152,8 @@ public sealed class Worker : BackgroundService
             await _identityService.SaveIdentityAsync(identity, ct);
 
             _logger.LogInformation(
-                "Device registered successfully. Pairing code: {PairingCode} (expires: {ExpiresAt})",
-                response.PairingCode, response.ExpiresAt);
-            _logger.LogInformation(
-                "Enter this pairing code in the mobile app to complete device setup");
+                "Device registered successfully. Pairing code available in Desktop app (expires: {ExpiresAt})",
+                response.ExpiresAt);
         }
         catch (Exception ex)
         {
