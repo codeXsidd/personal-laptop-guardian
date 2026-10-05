@@ -550,6 +550,7 @@ class _QuickActions extends StatelessWidget {
       _QA('Files', Icons.folder_open, '/events/$deviceId/files'),
       _QA('Event Log', Icons.article_outlined, '/events/$deviceId/eventlog'),
       _QA('Remote', Icons.screen_share, '/remote/$deviceId'),
+      _QA('Camera', Icons.videocam, '/remote/$deviceId'),
       _QA('Reports', Icons.bar_chart, '/reports/$deviceId'),
     ];
 

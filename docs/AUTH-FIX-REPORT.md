@@ -50,7 +50,7 @@
 
 The `.env` file in the project root contains the correct Supabase credentials:
 ```
-SUPABASE_URL=https://pfeubiedbwvjnlpiofmd.supabase.co
+SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=eyJhbGci...
 ```
 
@@ -90,7 +90,7 @@ flutter build apk --release --dart-define-from-file=../.env
 **Alternative (Manual dart-define):**
 ```bash
 flutter run \
-  --dart-define=SUPABASE_URL=https://pfeubiedbwvjnlpiofmd.supabase.co \
+  --dart-define=SUPABASE_URL=https://your-project.supabase.co \
   --dart-define=SUPABASE_ANON_KEY=eyJhbGci...
 ```
 
@@ -137,7 +137,7 @@ cat .env | grep SUPABASE
 
 **Expected:**
 ```
-SUPABASE_URL=https://pfeubiedbwvjnlpiofmd.supabase.co
+SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
 
@@ -201,7 +201,7 @@ Body: Contains confirmation link
 
 **Link Format:**
 ```
-https://pfeubiedbwvjnlpiofmd.supabase.co/auth/v1/verify?token=...&type=signup&redirect_to=com.laptopguardian.app://auth-callback
+https://your-project.supabase.co/auth/v1/verify?token=...&type=signup&redirect_to=com.laptopguardian.app://auth-callback
 ```
 
 **Tap Link:**

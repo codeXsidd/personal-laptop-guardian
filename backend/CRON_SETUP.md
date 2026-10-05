@@ -5,7 +5,7 @@ This document describes how to set up the four required production cron jobs for
 ## Prerequisites
 
 - Access to Supabase Dashboard
-- Project: `dtqbkinanckxlmyrkrxd`
+- Project: `your-project-ref`
 - Database access via SQL Editor
 
 ## Jobs to Configure
@@ -21,7 +21,7 @@ This document describes how to set up the four required production cron jobs for
 
 ### Option 1: Via Supabase Dashboard (Recommended)
 
-1. Go to https://supabase.com/dashboard/project/dtqbkinanckxlmyrkrxd/editor
+1. Go to https://supabase.com/dashboard/project/your-project-ref/editor
 2. Navigate to **SQL Editor**
 3. Create a new query
 4. Copy the contents of `migrations/20260926000001_setup_cron_jobs.sql`

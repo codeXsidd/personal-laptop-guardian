@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-10-05
+
+### Fixed
+- Windows session state: dashboard no longer shows "LOGGED OUT" while the user is actively working
+- Removed Event 4634 (internal session cleanup) which produced false logout events during lock/sleep/unlock
+- Removed logon type 7 (unlock) from login detection — unlocks tracked separately via SessionSwitch
+- Added SystemEvents.SessionSwitch as primary lock/unlock detection (works without Security audit policy)
+- Added WTS API initial session state detection on agent startup — resolves stale state after service restart
+- Cross-source deduplication between SessionSwitch and Security Event Log within 30-second window
+- Last Login and Last Logout timestamps are now independent and no longer appear identical
+
+### Added
+- Camera Quick Action on Android dashboard for direct access to camera feature
+- WTSGetActiveConsoleSessionId / WTSQuerySessionInformation for authoritative interactive user detection
+- Diagnostic logging for session state transitions (source, reason, session ID, connect state)
+
+### Changed
+- Notification text: "PC locked/unlocked" → "Windows workstation locked/unlocked"
+
+### Security
+- Hardened .gitignore: added *.sqlite, logs/, *.key, *.pem, *.jks, *.keystore, *.p12
+- Sanitized documentation: removed real Supabase project references from tracked markdown files
+
 ## [1.0.0] - 2026-10-05
 
 ### Added

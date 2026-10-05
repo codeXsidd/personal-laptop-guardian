@@ -1,4 +1,5 @@
 using System.Diagnostics.Eventing.Reader;
+using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using LaptopGuardian.Agent.Identity;
 using LaptopGuardian.Agent.Models;
@@ -21,6 +22,25 @@ public sealed class SessionMonitor : IEventMonitor
     private readonly Dictionary<string, DateTimeOffset> _recentEvents = new();
     private static readonly TimeSpan DeduplicationWindow = TimeSpan.FromSeconds(30);
 
+    [DllImport("kernel32.dll")]
+    private static extern uint WTSGetActiveConsoleSessionId();
+
+    [DllImport("wtsapi32.dll", SetLastError = true)]
+    private static extern bool WTSQuerySessionInformationW(
+        IntPtr hServer, uint sessionId, int wtsInfoClass,
+        out IntPtr ppBuffer, out uint pBytesReturned);
+
+    [DllImport("wtsapi32.dll")]
+    private static extern void WTSFreeMemory(IntPtr pMemory);
+
+    private const int WTSConnectState = 4;
+    private const int WTSUserName = 5;
+    private const int WTSDomainName = 7;
+
+    private const int WTSActive = 0;
+    private const int WTSDisconnected = 4;
+    private const uint InvalidSessionId = 0xFFFFFFFF;
+
     public string MonitorName => "Session";
 
     // Type 7 (Unlock) excluded — unlocks are tracked via SystemEvents.SessionSwitch
@@ -41,6 +61,9 @@ public sealed class SessionMonitor : IEventMonitor
         var identity = await _identityService.GetOrCreateIdentityAsync(cancellationToken);
         _deviceId = identity.DeviceId;
         _identity = identity;
+
+        // Detect the current interactive session state on startup
+        await DetectInitialSessionStateAsync(cancellationToken);
 
         // Primary lock/unlock detection via SystemEvents.SessionSwitch
         // Works without Security audit policy configuration
@@ -79,6 +102,108 @@ public sealed class SessionMonitor : IEventMonitor
         catch (EventLogException ex)
         {
             _logger.LogWarning(ex, "SessionMonitor: Failed to start Security log watcher — using SessionSwitch only");
+        }
+    }
+
+    private async Task DetectInitialSessionStateAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var sessionId = WTSGetActiveConsoleSessionId();
+            if (sessionId == InvalidSessionId)
+            {
+                _logger.LogInformation("SessionMonitor: No active console session detected on startup");
+                return;
+            }
+
+            string? username = QuerySessionString(sessionId, WTSUserName);
+            string? domain = QuerySessionString(sessionId, WTSDomainName);
+            int? connectState = QuerySessionInt(sessionId, WTSConnectState);
+
+            if (string.IsNullOrWhiteSpace(username))
+            {
+                _logger.LogInformation(
+                    "SessionMonitor: Console session {SessionId} has no user — no interactive logon",
+                    sessionId);
+                return;
+            }
+
+            if (IsSystemAccount(username))
+            {
+                _logger.LogInformation(
+                    "SessionMonitor: Console session {SessionId} user is system account {User} — skipping",
+                    sessionId, username);
+                return;
+            }
+
+            var fullUser = FormatUsername(domain ?? "", username);
+            string eventType;
+            string action;
+
+            if (connectState == WTSActive)
+            {
+                eventType = EventType.SessionLogin;
+                action = "logged_in";
+            }
+            else if (connectState == WTSDisconnected)
+            {
+                eventType = EventType.SessionLock;
+                action = "locked";
+            }
+            else
+            {
+                eventType = EventType.SessionLogin;
+                action = "logged_in";
+            }
+
+            var payload = new Dictionary<string, object>
+            {
+                ["machine_name"] = _identity!.MachineName,
+                ["username"] = fullUser,
+                ["action"] = action,
+                ["source"] = "WTS_InitialState",
+                ["session_id"] = sessionId.ToString(),
+                ["connect_state"] = connectState?.ToString() ?? "unknown"
+            };
+
+            var deviceEvent = DeviceEvent.Create(_deviceId!, eventType, EventSeverity.Info, payload);
+            await _eventStore.InsertEventAsync(deviceEvent);
+
+            _logger.LogInformation(
+                "SessionMonitor: Initial session state detected — User: {User}, State: {Action}, SessionId: {SessionId}",
+                fullUser, action, sessionId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "SessionMonitor: Failed to detect initial session state via WTS");
+        }
+    }
+
+    private static string? QuerySessionString(uint sessionId, int infoClass)
+    {
+        if (!WTSQuerySessionInformationW(IntPtr.Zero, sessionId, infoClass, out var buffer, out var bytes))
+            return null;
+        try
+        {
+            return bytes > 2 ? Marshal.PtrToStringUni(buffer) : null;
+        }
+        finally
+        {
+            WTSFreeMemory(buffer);
+        }
+    }
+
+    private static int? QuerySessionInt(uint sessionId, int infoClass)
+    {
+        if (!WTSQuerySessionInformationW(IntPtr.Zero, sessionId, infoClass, out var buffer, out var bytes))
+            return null;
+        try
+        {
+            return bytes >= 4 ? Marshal.ReadInt32(buffer) : null;
+        }
+        finally
+        {
+            WTSFreeMemory(buffer);
         }
     }
 

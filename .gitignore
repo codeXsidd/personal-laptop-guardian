@@ -50,9 +50,12 @@ desktop.ini
 
 # Logs and databases
 *.log
+logs/
 *.db
 *.db-shm
 *.db-wal
+*.sqlite
+*.sqlite3
 
 # Build output
 *.exe
@@ -75,6 +78,11 @@ windows-app/
 # Dev signing certificates and scripts
 dev-cert.cer
 *.pfx
+*.key
+*.pem
+*.jks
+*.keystore
+*.p12
 sign-desktop.ps1
 sign-debug.ps1
 
