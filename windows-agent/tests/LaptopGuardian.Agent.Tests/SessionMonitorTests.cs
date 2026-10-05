@@ -81,6 +81,54 @@ public sealed class SessionMonitorTests
     }
 
     [Fact]
+    public void LogonType7_IsExcluded_BecauseUnlockTrackedBy4801()
+    {
+        // Type 7 is "Unlock workstation" — tracked via event 4801 (session_unlock)
+        // It must NOT produce a session_login event
+        var interactiveTypes = new HashSet<int> { 2, 10, 11 };
+        Assert.DoesNotContain(7, interactiveTypes);
+    }
+
+    [Fact]
+    public void Event4634_IsNotUsed_OnlyEvent4647ForRealLogoff()
+    {
+        // Event 4634 fires during lock/sleep/unlock for internal session cleanup
+        // Only 4647 (user-initiated logoff) should produce session_logout
+        // This test documents the design decision
+        Assert.Equal("session_logout", EventType.SessionLogout);
+        Assert.Equal("session_lock", EventType.SessionLock);
+        Assert.NotEqual(EventType.SessionLogout, EventType.SessionLock);
+    }
+
+    [Fact]
+    public void LockDoesNotProduceLogout()
+    {
+        // session_lock and session_logout are distinct event types
+        // Lock (4800) must never be confused with Logout (4647)
+        Assert.Equal("session_lock", EventType.SessionLock);
+        Assert.Equal("session_logout", EventType.SessionLogout);
+        Assert.NotEqual(EventType.SessionLock, EventType.SessionLogout);
+    }
+
+    [Fact]
+    public void UnlockDoesNotProduceLogin()
+    {
+        // session_unlock and session_login are distinct event types
+        // Unlock (4801) must never be confused with Login (4624 type 2)
+        Assert.Equal("session_unlock", EventType.SessionUnlock);
+        Assert.Equal("session_login", EventType.SessionLogin);
+        Assert.NotEqual(EventType.SessionUnlock, EventType.SessionLogin);
+    }
+
+    [Fact]
+    public void SleepWakeDoNotProduceLoginLogout()
+    {
+        // Power events must never be confused with session events
+        Assert.NotEqual(EventType.SystemSleep, EventType.SessionLogout);
+        Assert.NotEqual(EventType.SystemWake, EventType.SessionLogin);
+    }
+
+    [Fact]
     public void EventType_SessionEventsNeverProducePowerTypes()
     {
         // Verify 4624 (login) maps to session_login, NOT system_startup

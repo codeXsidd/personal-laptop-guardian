@@ -215,6 +215,30 @@ class _DeviceHeader extends StatelessWidget {
                       ? Icons.lock
                       : Icons.person_off,
             ),
+            if (device.stateExplanation.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, size: 16, color: theme.colorScheme.outline),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        device.stateExplanation,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             const Divider(height: 1),
             const SizedBox(height: 8),

@@ -117,6 +117,31 @@ class Device {
     _ => 'Unknown',
   };
 
+  String get stateExplanation {
+    if (powerState == 'sleeping') {
+      return 'Your laptop is sleeping. The Windows session has not been logged out.';
+    }
+    if (powerState == 'off' || (isOffline && powerState != 'on')) {
+      return 'The laptop appears to be off or unreachable. The last known state is preserved.';
+    }
+    if (isLaptopOn && userSessionState == 'locked') {
+      return 'Your laptop is running, but the Windows screen is locked.';
+    }
+    if (isLaptopOn && isOffline && userSessionState == 'logged_in') {
+      return 'The laptop is running and the Windows user is logged in, but the PC currently has no network connection.';
+    }
+    if (isLaptopOn && isOnline && userSessionState == 'logged_in') {
+      return 'Your laptop is running normally with an active Windows session.';
+    }
+    if (isLaptopOn && userSessionState == 'logged_out') {
+      return 'Your laptop is running but no Windows user is logged in.';
+    }
+    if (powerState == 'shutting_down') {
+      return 'Your laptop is shutting down.';
+    }
+    return '';
+  }
+
   Duration get timeSinceLastSeen {
     if (lastSeenAt == null) return Duration.zero;
     return DateTime.now().toUtc().difference(lastSeenAt!);

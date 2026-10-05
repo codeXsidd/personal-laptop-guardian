@@ -108,8 +108,8 @@ function eventDisplayName(eventType: string): string {
     agent_started: "Laptop Guardian started",
     session_login: "Windows user logged in",
     session_logout: "Windows user logged out",
-    session_lock: "PC locked",
-    session_unlock: "PC unlocked",
+    session_lock: "Windows workstation locked",
+    session_unlock: "Windows workstation unlocked",
     login_failed: "Login attempt failed",
     process_start: "App Started",
     process_stop: "App Stopped",
@@ -146,9 +146,9 @@ function eventNotificationBody(
     case "session_logout":
       return `A Windows user logged out\nTime: ${timeStr}`;
     case "session_lock":
-      return `PC locked\nTime: ${timeStr}`;
+      return `Windows workstation locked\nTime: ${timeStr}`;
     case "session_unlock":
-      return `PC unlocked\nTime: ${timeStr}`;
+      return `Windows workstation unlocked\nTime: ${timeStr}`;
     case "login_failed":
       return `Login attempt failed on ${deviceName}\nTime: ${timeStr}`;
     case "usb_connected":
