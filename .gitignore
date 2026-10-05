@@ -77,3 +77,8 @@ dev-cert.cer
 *.pfx
 sign-desktop.ps1
 sign-debug.ps1
+
+# Test screenshots
+*.png
+!mobile/android/app/src/main/res/**/*.png
+!mobile/assets/**/*.png

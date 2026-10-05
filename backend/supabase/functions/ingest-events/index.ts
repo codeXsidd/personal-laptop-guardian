@@ -110,14 +110,19 @@ Deno.serve(async (req) => {
   const admin = getSupabaseAdmin();
 
   // Prepare rows for insertion
-  const rows = body.events.map((evt) => ({
-    id: evt.id,
-    device_id: device.id,
-    event_type: evt.event_type,
-    severity: evt.severity,
-    timestamp: evt.timestamp,
-    payload: evt.payload ?? {},
-  }));
+  const rows = body.events.map((evt) => {
+    const payload = evt.payload ?? {};
+    if (evt.pc_timezone) payload.pc_timezone = evt.pc_timezone;
+    if (evt.utc_offset) payload.utc_offset = evt.utc_offset;
+    return {
+      id: evt.id,
+      device_id: device.id,
+      event_type: evt.event_type,
+      severity: evt.severity,
+      timestamp: evt.timestamp,
+      payload,
+    };
+  });
 
   // Upsert with ON CONFLICT DO NOTHING for deduplication
   const { data: inserted, error } = await admin
@@ -138,6 +143,49 @@ Deno.serve(async (req) => {
     .from("devices")
     .update({ last_seen_at: new Date().toISOString(), status: "online" })
     .eq("id", device.id);
+
+  // Update device state based on event types
+  const stateUpdates: Record<string, unknown> = {};
+  for (const evt of body.events) {
+    switch (evt.event_type) {
+      case "system_startup":
+      case "agent_started":
+        stateUpdates.power_state = "on";
+        stateUpdates.last_startup_at = evt.timestamp;
+        break;
+      case "system_shutdown":
+        stateUpdates.power_state = "shutting_down";
+        stateUpdates.last_shutdown_at = evt.timestamp;
+        break;
+      case "system_sleep":
+        stateUpdates.power_state = "sleeping";
+        stateUpdates.last_sleep_at = evt.timestamp;
+        break;
+      case "system_wake":
+        stateUpdates.power_state = "on";
+        stateUpdates.last_wake_at = evt.timestamp;
+        break;
+      case "session_login":
+        stateUpdates.user_session_state = "logged_in";
+        stateUpdates.last_login_at = evt.timestamp;
+        break;
+      case "session_unlock":
+        stateUpdates.user_session_state = "logged_in";
+        stateUpdates.last_unlock_at = evt.timestamp;
+        break;
+      case "session_logout":
+        stateUpdates.user_session_state = "logged_out";
+        stateUpdates.last_logout_at = evt.timestamp;
+        break;
+      case "session_lock":
+        stateUpdates.user_session_state = "locked";
+        stateUpdates.last_lock_at = evt.timestamp;
+        break;
+    }
+  }
+  if (Object.keys(stateUpdates).length > 0) {
+    await admin.from("devices").update(stateUpdates).eq("id", device.id);
+  }
 
   // Trigger notifications for newly inserted events (skip metrics)
   const SKIP_NOTIFY = new Set(["system_metrics"]);

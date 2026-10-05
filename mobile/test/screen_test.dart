@@ -601,7 +601,7 @@ void main() {
       ));
       await tester.pumpAndSettle();
 
-      expect(find.text('Login'), findsOneWidget);
+      expect(find.text('Windows User Logged In'), findsOneWidget);
       expect(find.text('Admin'), findsOneWidget);
       expect(find.text('HIGH'), findsOneWidget);
     });

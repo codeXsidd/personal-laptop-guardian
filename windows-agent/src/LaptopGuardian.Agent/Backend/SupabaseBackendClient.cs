@@ -53,6 +53,10 @@ public sealed class SupabaseBackendClient : IBackendClient
     {
         _logger.LogDebug("Ingesting {Count} events", events.Count);
 
+        var tz = TimeZoneInfo.Local;
+        var utcOffset = tz.BaseUtcOffset;
+        var offsetStr = $"{(utcOffset >= TimeSpan.Zero ? "+" : "-")}{utcOffset:hh\\:mm}";
+
         var payload = new
         {
             events = events.Select(e => new
@@ -61,6 +65,8 @@ public sealed class SupabaseBackendClient : IBackendClient
                 event_type = e.EventType,
                 severity = e.Severity,
                 timestamp = e.Timestamp.ToString("O"),
+                pc_timezone = tz.Id,
+                utc_offset = offsetStr,
                 payload = JsonSerializer.Deserialize<JsonElement>(e.PayloadJson)
             }).ToArray()
         };

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/notification_settings.dart';
@@ -185,10 +186,21 @@ class NotificationService {
     final channelName =
         isHighSeverity ? _securityChannelName : _generalChannelName;
 
+    var body = notification?.body ?? data['body'] ?? '';
+    final eventTs = data['event_timestamp'];
+    if (eventTs != null && eventTs is String && eventTs.isNotEmpty) {
+      final dt = DateTime.tryParse(eventTs);
+      if (dt != null) {
+        final local = dt.toLocal();
+        final fmt = DateFormat('h:mm:ss a').format(local);
+        body = '$body at $fmt';
+      }
+    }
+
     await _localNotifications.show(
       message.hashCode,
       notification?.title ?? data['title'] ?? 'Laptop Guardian',
-      notification?.body ?? data['body'] ?? '',
+      body,
       NotificationDetails(
         android: AndroidNotificationDetails(
           channelId,

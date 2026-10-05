@@ -292,9 +292,10 @@ public sealed class SqliteEventStore : IEventStore, IDisposable
             await using var command = connection.CreateCommand();
             command.CommandText = """
                 DELETE FROM events
-                WHERE sync_status = 'synced' AND synced_at < datetime('now', '-' || @retentionDays || ' days')
+                WHERE sync_status = 'synced' AND synced_at < @cutoff
                 """;
-            command.Parameters.AddWithValue("@retentionDays", retentionDays);
+            command.Parameters.AddWithValue("@cutoff",
+                DateTimeOffset.UtcNow.AddDays(-retentionDays).ToString("O"));
             var deleted = await command.ExecuteNonQueryAsync(cancellationToken);
 
             _logger.LogInformation("Cleaned up {Count} old synced events (retention: {RetentionDays} days)",

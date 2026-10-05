@@ -104,6 +104,11 @@ class _EventDetailSheet extends StatelessWidget {
                 EventTypes.category(event.eventType).name),
             _InfoRow('Severity', event.severity),
             _InfoRow('Timestamp', fmt.format(event.timestamp.toLocal())),
+            _InfoRow('UTC', fmt.format(event.timestamp.toUtc())),
+            if (event.pcTimezone != null)
+              _InfoRow('PC Timezone', event.pcTimezone!),
+            if (event.utcOffset != null)
+              _InfoRow('UTC Offset', event.utcOffset!),
             _InfoRow('Device ID', event.deviceId),
 
             if (event.payload.isNotEmpty) ...[

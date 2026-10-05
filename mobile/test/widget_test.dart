@@ -252,10 +252,10 @@ void main() {
 
   group('EventTypes', () {
     test('displayName maps all known types', () {
-      expect(EventTypes.displayName('session_login'), 'Login');
+      expect(EventTypes.displayName('session_login'), 'Windows User Logged In');
       expect(EventTypes.displayName('process_start'), 'App Started');
-      expect(EventTypes.displayName('usb_connected'), 'USB Connected');
-      expect(EventTypes.displayName('file_access'), 'File Access');
+      expect(EventTypes.displayName('usb_connected'), 'USB Device Connected');
+      expect(EventTypes.displayName('file_access'), 'File Accessed');
       expect(EventTypes.displayName('system_metrics'), 'System Metrics');
     });
 

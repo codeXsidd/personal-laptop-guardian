@@ -239,7 +239,7 @@ public sealed class FileAuditMonitor : IEventMonitor
                 return null;
 
             var accessType = NormalizeAccessType(accessMask);
-            var timeCreated = record.TimeCreated ?? DateTimeOffset.UtcNow;
+            var timeCreated = new DateTimeOffset((record.TimeCreated ?? DateTime.UtcNow).ToUniversalTime(), TimeSpan.Zero);
 
             return (objectPath, accessType, username, record.Id, timeCreated,
                 processName, processId, accessMask);

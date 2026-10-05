@@ -194,7 +194,7 @@ public sealed class ProcessMonitor : IEventMonitor
     {
         try
         {
-            return new DateTimeOffset(proc.StartTime);
+            return new DateTimeOffset(proc.StartTime.ToUniversalTime(), TimeSpan.Zero);
         }
         catch
         {

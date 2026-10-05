@@ -6,6 +6,7 @@ import 'package:timeago/timeago.dart' as timeago;
 import '../../models/event.dart';
 import '../../models/event_type.dart';
 import '../../providers/event_provider.dart';
+import '../../services/event_service.dart';
 import 'event_detail_sheet.dart';
 
 class EventListScreen extends ConsumerStatefulWidget {
@@ -35,6 +36,10 @@ class _EventListScreenState extends ConsumerState<EventListScreen> {
 
   String? _severityFilter;
   DateTimeRange? _dateRange;
+
+  // Multi-select state
+  bool _selectMode = false;
+  final _selected = <String>{};
 
   @override
   void initState() {
@@ -91,6 +96,226 @@ class _EventListScreenState extends ConsumerState<EventListScreen> {
     _loadMore();
   }
 
+  void _enterSelectMode(String eventId) {
+    setState(() {
+      _selectMode = true;
+      _selected.add(eventId);
+    });
+  }
+
+  void _exitSelectMode() {
+    setState(() {
+      _selectMode = false;
+      _selected.clear();
+    });
+  }
+
+  void _toggleSelection(String eventId) {
+    setState(() {
+      if (_selected.contains(eventId)) {
+        _selected.remove(eventId);
+        if (_selected.isEmpty) _selectMode = false;
+      } else {
+        _selected.add(eventId);
+      }
+    });
+  }
+
+  Future<void> _deleteSelected() async {
+    final protectedCount = _events
+        .where((e) => _selected.contains(e.id) && EventService.isProtectedType(e.eventType))
+        .length;
+    final deletableIds = _events
+        .where((e) => _selected.contains(e.id) && !EventService.isProtectedType(e.eventType))
+        .map((e) => e.id)
+        .toList();
+
+    if (deletableIds.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Selected events are protected security/audit logs and cannot be deleted.')),
+        );
+      }
+      return;
+    }
+
+    final confirm = await _confirmDelete(
+      'Delete ${deletableIds.length} event${deletableIds.length == 1 ? '' : 's'}?',
+      protectedCount > 0
+          ? '$protectedCount protected security event${protectedCount == 1 ? '' : 's'} will be skipped.'
+          : null,
+    );
+    if (confirm != true) return;
+
+    try {
+      await ref.read(eventServiceProvider).deleteEvents(deletableIds);
+      setState(() {
+        _events.removeWhere((e) => deletableIds.contains(e.id));
+        _selected.clear();
+        _selectMode = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Deleted ${deletableIds.length} event${deletableIds.length == 1 ? '' : 's'}.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Delete failed: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteSingleEvent(ActivityEvent event) async {
+    if (EventService.isProtectedType(event.eventType)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${EventTypes.displayName(event.eventType)} is a protected security event and cannot be deleted.')),
+      );
+      return;
+    }
+    final confirm = await _confirmDelete(
+      'Delete this ${EventTypes.displayName(event.eventType)} event?',
+      null,
+    );
+    if (confirm != true) return;
+
+    try {
+      await ref.read(eventServiceProvider).deleteEvent(event.id);
+      setState(() => _events.removeWhere((e) => e.id == event.id));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Event deleted.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Delete failed: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteOldEvents() async {
+    final choice = await showModalBottomSheet<int>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 32, height: 4,
+                  decoration: BoxDecoration(
+                    color: Theme.of(ctx).colorScheme.outline.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text('Delete Old Logs',
+                  style: Theme.of(ctx).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              Text('Security & audit events are protected and will not be deleted.',
+                  style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
+              const SizedBox(height: 16),
+              ...[
+                (7, 'Older than 7 days'),
+                (30, 'Older than 30 days'),
+                (90, 'Older than 90 days'),
+              ].map((e) => ListTile(
+                    leading: const Icon(Icons.delete_sweep),
+                    title: Text(e.$2),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    onTap: () => Navigator.pop(ctx, e.$1),
+                  )),
+              ListTile(
+                leading: const Icon(Icons.date_range),
+                title: const Text('Custom date...'),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                onTap: () => Navigator.pop(ctx, -1),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+
+    DateTime cutoff;
+    if (choice == -1) {
+      final picked = await showDatePicker(
+        context: context,
+        initialDate: DateTime.now().subtract(const Duration(days: 30)),
+        firstDate: DateTime(2024),
+        lastDate: DateTime.now(),
+        helpText: 'Delete events before this date',
+      );
+      if (picked == null || !mounted) return;
+      cutoff = picked.toUtc();
+    } else {
+      cutoff = DateTime.now().toUtc().subtract(Duration(days: choice));
+    }
+
+    final dateFmt = DateFormat('MMM d, yyyy');
+    final confirm = await _confirmDelete(
+      'Delete all eligible events before ${dateFmt.format(cutoff.toLocal())}?',
+      'Protected security/audit events will be kept.',
+    );
+    if (confirm != true) return;
+
+    try {
+      final count = await ref.read(eventServiceProvider).deleteEventsOlderThan(
+            widget.deviceId,
+            cutoff,
+          );
+      await _refresh();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Deleted $count old event${count == 1 ? '' : 's'}.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Delete failed: $e')),
+        );
+      }
+    }
+  }
+
+  Future<bool?> _confirmDelete(String title, String? subtitle) {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: subtitle != null ? Text(subtitle) : null,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
   bool get _isTimeline =>
       widget.filterEventType == null && widget.filterEventTypes == null;
 
@@ -101,35 +326,82 @@ class _EventListScreenState extends ConsumerState<EventListScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.title ?? 'Activity Timeline'),
-        actions: [
-          if (_hasActiveFilters)
-            IconButton(
-              icon: const Icon(Icons.filter_alt_off),
-              tooltip: 'Clear filters',
-              onPressed: () {
-                setState(() {
-                  _severityFilter = null;
-                  _dateRange = null;
-                });
-                _applyFilters();
-              },
-            ),
-          IconButton(
-            icon: Badge(
-              isLabelVisible: _hasActiveFilters,
-              child: const Icon(Icons.filter_list),
-            ),
-            tooltip: 'Filter',
-            onPressed: () => _showFilterSheet(context),
-          ),
-        ],
-      ),
+      appBar: _selectMode ? _buildSelectAppBar(theme) : _buildNormalAppBar(theme),
       body: RefreshIndicator(
         onRefresh: _refresh,
         child: _buildBody(theme),
       ),
+    );
+  }
+
+  PreferredSizeWidget _buildNormalAppBar(ThemeData theme) {
+    return AppBar(
+      title: Text(widget.title ?? 'Activity Timeline'),
+      actions: [
+        if (_hasActiveFilters)
+          IconButton(
+            icon: const Icon(Icons.filter_alt_off),
+            tooltip: 'Clear filters',
+            onPressed: () {
+              setState(() {
+                _severityFilter = null;
+                _dateRange = null;
+              });
+              _applyFilters();
+            },
+          ),
+        IconButton(
+          icon: Badge(
+            isLabelVisible: _hasActiveFilters,
+            child: const Icon(Icons.filter_list),
+          ),
+          tooltip: 'Filter',
+          onPressed: () => _showFilterSheet(context),
+        ),
+        PopupMenuButton<String>(
+          icon: const Icon(Icons.more_vert),
+          onSelected: (value) {
+            if (value == 'select') {
+              setState(() => _selectMode = true);
+            } else if (value == 'delete_old') {
+              _deleteOldEvents();
+            }
+          },
+          itemBuilder: (_) => [
+            const PopupMenuItem(value: 'select', child: Text('Select events')),
+            const PopupMenuItem(value: 'delete_old', child: Text('Delete old logs...')),
+          ],
+        ),
+      ],
+    );
+  }
+
+  PreferredSizeWidget _buildSelectAppBar(ThemeData theme) {
+    return AppBar(
+      leading: IconButton(
+        icon: const Icon(Icons.close),
+        onPressed: _exitSelectMode,
+      ),
+      title: Text('${_selected.length} selected'),
+      actions: [
+        TextButton(
+          onPressed: () {
+            setState(() {
+              if (_selected.length == _events.length) {
+                _selected.clear();
+              } else {
+                _selected.addAll(_events.map((e) => e.id));
+              }
+            });
+          },
+          child: Text(_selected.length == _events.length ? 'Deselect All' : 'Select All'),
+        ),
+        IconButton(
+          icon: const Icon(Icons.delete),
+          tooltip: 'Delete selected',
+          onPressed: _selected.isEmpty ? null : _deleteSelected,
+        ),
+      ],
     );
   }
 
@@ -192,8 +464,23 @@ class _EventListScreenState extends ConsumerState<EventListScreen> {
             child: Center(child: CircularProgressIndicator()),
           );
         }
-        return EventTile(event: _events[index]);
+        return _buildEventTile(_events[index]);
       },
+    );
+  }
+
+  Widget _buildEventTile(ActivityEvent event) {
+    return EventTile(
+      event: event,
+      selectMode: _selectMode,
+      selected: _selected.contains(event.id),
+      onTap: _selectMode
+          ? () => _toggleSelection(event.id)
+          : () => showEventDetail(context, event),
+      onLongPress: _selectMode
+          ? null
+          : () => _enterSelectMode(event.id),
+      onDelete: _selectMode ? null : () => _deleteSingleEvent(event),
     );
   }
 
@@ -234,7 +521,7 @@ class _EventListScreenState extends ConsumerState<EventListScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             sliver: SliverList.builder(
               itemCount: entry.value.length,
-              itemBuilder: (_, i) => EventTile(event: entry.value[i]),
+              itemBuilder: (_, i) => _buildEventTile(entry.value[i]),
             ),
           ),
         ],
@@ -449,32 +736,66 @@ class _FilterSheetState extends State<_FilterSheet> {
 
 class EventTile extends StatelessWidget {
   final ActivityEvent event;
+  final VoidCallback? onDelete;
+  final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
+  final bool selectMode;
+  final bool selected;
 
-  const EventTile({super.key, required this.event});
+  const EventTile({
+    super.key,
+    required this.event,
+    this.onDelete,
+    this.onTap,
+    this.onLongPress,
+    this.selectMode = false,
+    this.selected = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final sevColor = EventTypes.severityColor(event.severity);
+    final cat = EventTypes.category(event.eventType);
+    final catLabel = EventTypes.categoryLabel(cat);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
+      color: selected ? theme.colorScheme.primaryContainer.withValues(alpha: 0.3) : null,
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () => showEventDetail(context, event),
+        onTap: onTap ?? () => showEventDetail(context, event),
+        onLongPress: onLongPress ?? onDelete,
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Row(
             children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: sevColor.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
+              if (selectMode) ...[
+                Checkbox(
+                  value: selected,
+                  onChanged: (_) => onTap?.call(),
                 ),
-                child: Icon(EventTypes.icon(event.eventType),
-                    size: 20, color: sevColor),
+                const SizedBox(width: 4),
+              ],
+              Column(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: sevColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(EventTypes.icon(event.eventType),
+                        size: 20, color: sevColor),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(catLabel,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                          fontSize: 8,
+                          fontWeight: FontWeight.w600,
+                          color: theme.colorScheme.outline)),
+                ],
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -495,7 +816,7 @@ class EventTile extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text(timeago.format(event.timestamp),
+                  Text(timeago.format(event.timestamp.toLocal()),
                       style: theme.textTheme.labelSmall
                           ?.copyWith(color: theme.colorScheme.outline)),
                   const SizedBox(height: 2),

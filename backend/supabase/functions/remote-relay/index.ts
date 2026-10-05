@@ -77,6 +77,7 @@ Deno.serve(async (req) => {
   const peer: SessionPeer = { ws: socket, role, sessionId };
 
   socket.onopen = () => {
+    console.log(`[relay] ${role} connected to session ${sessionId}, rooms=${rooms.size}`);
     let room = rooms.get(sessionId);
     if (!room) {
       room = {};
@@ -85,27 +86,39 @@ Deno.serve(async (req) => {
 
     // Close existing peer in same role
     if (role === "desktop" && room.desktop) {
+      console.log(`[relay] Replacing existing desktop in session ${sessionId}`);
       try { room.desktop.ws.close(1000, "replaced"); } catch { /* */ }
     }
     if (role === "mobile" && room.mobile) {
+      console.log(`[relay] Replacing existing mobile in session ${sessionId}`);
       try { room.mobile.ws.close(1000, "replaced"); } catch { /* */ }
     }
 
     room[role] = peer;
+    console.log(`[relay] Room ${sessionId}: desktop=${!!room.desktop} mobile=${!!room.mobile}`);
+
+    // Send a test message to confirm the WebSocket is working
+    try { socket.send(JSON.stringify({ type: "relay_connected", role, session_id: sessionId })); } catch { /* */ }
 
     // Notify the other peer
     const other = role === "desktop" ? room.mobile : room.desktop;
     if (other?.ws.readyState === WebSocket.OPEN) {
+      console.log(`[relay] Notifying ${role === "desktop" ? "mobile" : "desktop"} of peer_joined`);
       other.ws.send(JSON.stringify({ type: "peer_joined", role }));
     }
   };
 
+  let msgCount = 0;
   socket.onmessage = (event) => {
     const room = rooms.get(sessionId);
-    if (!room) return;
+    if (!room) { console.log(`[relay] No room for ${sessionId}`); return; }
 
     const target = role === "desktop" ? room.mobile : room.desktop;
-    if (!target || target.ws.readyState !== WebSocket.OPEN) return;
+    if (!target || target.ws.readyState !== WebSocket.OPEN) {
+      if (msgCount < 3) console.log(`[relay] No target for ${role} in ${sessionId}, target=${!!target}, state=${target?.ws.readyState}`);
+      msgCount++;
+      return;
+    }
 
     // Relay the message directly (binary or text)
     if (event.data instanceof ArrayBuffer) {
@@ -121,9 +134,9 @@ Deno.serve(async (req) => {
     }
   };
 
-  socket.onclose = () => {
+  socket.onclose = (event) => {
+    console.log(`[relay] ${role} disconnected from ${sessionId}, code=${event.code} reason=${event.reason}`);
     cleanupRoom(sessionId, role);
-    // Notify the other peer
     const room = rooms.get(sessionId);
     if (room) {
       const other = role === "desktop" ? room.mobile : room.desktop;
@@ -133,7 +146,8 @@ Deno.serve(async (req) => {
     }
   };
 
-  socket.onerror = () => {
+  socket.onerror = (event) => {
+    console.log(`[relay] ${role} error in ${sessionId}: ${event}`);
     cleanupRoom(sessionId, role);
   };
 

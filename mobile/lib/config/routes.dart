@@ -14,6 +14,7 @@ import '../screens/events/login_history_screen.dart';
 import '../screens/events/network_history_screen.dart';
 import '../screens/events/process_history_screen.dart';
 import '../screens/events/usb_history_screen.dart';
+import '../screens/notifications/notification_history_screen.dart';
 import '../screens/pairing/pair_device_screen.dart';
 import '../screens/remote/remote_access_screen.dart';
 import '../screens/reports/reports_screen.dart';
@@ -36,6 +37,20 @@ GoRouter buildRouter() {
       // GoRouter intercepts deep link URIs and tries to route them as paths.
       // Auth callback URIs must be handled here so the user sees the
       // verification result screen instead of a "Page Not Found" error.
+      // Handle deep link navigation: laptopguardian:///remote/DEVICE_ID?auto=true
+      if (uri.startsWith('laptopguardian://')) {
+        final deepUri = Uri.parse(uri);
+        final path = deepUri.path;
+        if (path.isNotEmpty && isLoggedIn) {
+          debugPrint('[Router] Deep link navigation: $path');
+          final query = deepUri.queryParameters;
+          if (query.isNotEmpty) {
+            return Uri(path: path, queryParameters: query).toString();
+          }
+          return path;
+        }
+      }
+
       if (uri.contains('auth-callback')) {
         final fragment = state.uri.fragment;
         if (fragment.contains('error=')) {
@@ -140,6 +155,7 @@ GoRouter buildRouter() {
             path: '/remote/:deviceId',
             builder: (context, state) => RemoteAccessScreen(
               deviceId: state.pathParameters['deviceId']!,
+              autoConnect: state.uri.queryParameters['auto'] == 'true',
             ),
           ),
           GoRoute(
@@ -151,6 +167,12 @@ GoRouter buildRouter() {
           GoRoute(
             path: '/settings',
             builder: (context, state) => const SettingsScreen(),
+          ),
+          GoRoute(
+            path: '/notifications/:deviceId',
+            builder: (context, state) => NotificationHistoryScreen(
+              deviceId: state.pathParameters['deviceId']!,
+            ),
           ),
           GoRoute(
             path: '/settings/notifications/:deviceId',

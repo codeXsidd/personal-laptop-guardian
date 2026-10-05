@@ -7,8 +7,13 @@ import '../../services/remote_session_service.dart';
 
 class RemoteAccessScreen extends StatefulWidget {
   final String deviceId;
+  final bool autoConnect;
 
-  const RemoteAccessScreen({super.key, required this.deviceId});
+  const RemoteAccessScreen({
+    super.key,
+    required this.deviceId,
+    this.autoConnect = false,
+  });
 
   @override
   State<RemoteAccessScreen> createState() => _RemoteAccessScreenState();
@@ -22,6 +27,8 @@ class _RemoteAccessScreenState extends State<RemoteAccessScreen> {
   bool _isRequesting = false;
   bool _showKeyboard = false;
   bool _showControls = true;
+  bool _cameraActive = false;
+  Uint8List? _latestCameraFrame;
   final _keyboardFocus = FocusNode();
 
   final _imageKey = GlobalKey();
@@ -29,6 +36,8 @@ class _RemoteAccessScreenState extends State<RemoteAccessScreen> {
   StreamSubscription? _statusSub;
   StreamSubscription? _sessionSub;
   StreamSubscription? _frameSub;
+  StreamSubscription? _cameraFrameSub;
+  StreamSubscription? _cameraStateSub;
 
   @override
   void initState() {
@@ -37,11 +46,32 @@ class _RemoteAccessScreenState extends State<RemoteAccessScreen> {
       if (mounted) setState(() => _status = status);
     });
     _sessionSub = _service.sessionStream.listen((session) {
-      if (mounted) setState(() => _session = session);
+      if (!mounted) return;
+      setState(() {
+        _session = session;
+        if (session == null || session.isTerminal) {
+          _latestFrame = null;
+          _showKeyboard = false;
+        }
+      });
     });
     _frameSub = _service.frameStream.listen((frame) {
       if (mounted) setState(() => _latestFrame = frame);
     });
+    _cameraFrameSub = _service.cameraFrameStream.listen((frame) {
+      if (mounted) setState(() => _latestCameraFrame = frame);
+    });
+    _cameraStateSub = _service.cameraStateStream.listen((active) {
+      if (mounted) {
+        setState(() {
+          _cameraActive = active;
+          if (!active) _latestCameraFrame = null;
+        });
+      }
+    });
+    if (widget.autoConnect) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _requestAccess());
+    }
   }
 
   @override
@@ -49,6 +79,8 @@ class _RemoteAccessScreenState extends State<RemoteAccessScreen> {
     _statusSub?.cancel();
     _sessionSub?.cancel();
     _frameSub?.cancel();
+    _cameraFrameSub?.cancel();
+    _cameraStateSub?.cancel();
     _keyboardFocus.dispose();
     _service.dispose();
     super.dispose();
@@ -61,10 +93,15 @@ class _RemoteAccessScreenState extends State<RemoteAccessScreen> {
   }
 
   Future<void> _endSession() async {
+    if (_cameraActive) {
+      _service.sendCameraControl('stop');
+    }
     await _service.endSession();
     if (mounted) {
       setState(() {
         _latestFrame = null;
+        _latestCameraFrame = null;
+        _cameraActive = false;
         _status = 'Session ended';
         _showKeyboard = false;
       });
@@ -82,6 +119,7 @@ class _RemoteAccessScreenState extends State<RemoteAccessScreen> {
   }
 
   void _onTapUp(TapUpDetails details) {
+    if (!_isSessionActive) return;
     final pos = _normalizePosition(details.localPosition);
     if (pos == null) return;
     _service.sendInput({
@@ -92,6 +130,7 @@ class _RemoteAccessScreenState extends State<RemoteAccessScreen> {
   }
 
   void _onLongPressEnd(LongPressEndDetails details) {
+    if (!_isSessionActive) return;
     final pos = _normalizePosition(details.localPosition);
     if (pos == null) return;
     _service.sendInput({
@@ -102,6 +141,7 @@ class _RemoteAccessScreenState extends State<RemoteAccessScreen> {
   }
 
   void _onPanUpdate(DragUpdateDetails details) {
+    if (!_isSessionActive) return;
     final pos = _normalizePosition(details.localPosition);
     if (pos == null) return;
     _service.sendInput({
@@ -112,10 +152,12 @@ class _RemoteAccessScreenState extends State<RemoteAccessScreen> {
   }
 
   void _onDoubleTap() {
+    if (!_isSessionActive) return;
     _service.sendInput({'input_type': 'double_click'});
   }
 
   void _handleKeyEvent(KeyEvent event) {
+    if (!_isSessionActive) return;
     final key = _mapFlutterKey(event.logicalKey);
     if (key == null) return;
 
@@ -208,14 +250,17 @@ class _RemoteAccessScreenState extends State<RemoteAccessScreen> {
     }
   }
 
+  bool get _isSessionActive => _service.isConnected && _latestFrame != null;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isConnected = _service.isConnected;
-    final hasFrame = _latestFrame != null;
+
+    final showVideo = _isSessionActive;
 
     return Scaffold(
-      appBar: hasFrame
+      appBar: showVideo
           ? null
           : AppBar(
               title: const Text('Remote Access'),
@@ -228,7 +273,7 @@ class _RemoteAccessScreenState extends State<RemoteAccessScreen> {
                   ),
               ],
             ),
-      body: hasFrame ? _buildScreenView(theme) : _buildControlPanel(theme),
+      body: showVideo ? _buildScreenView(theme) : _buildControlPanel(theme),
     );
   }
 
@@ -242,24 +287,52 @@ class _RemoteAccessScreenState extends State<RemoteAccessScreen> {
           children: [
             // Status bar
             _buildStatusBar(),
-            // Screen image with touch handling
+            // Screen image with touch handling + camera PiP
             Expanded(
-              child: GestureDetector(
-                onTapUp: _onTapUp,
-                onDoubleTap: _onDoubleTap,
-                onLongPressEnd: _onLongPressEnd,
-                onPanUpdate: _onPanUpdate,
-                child: Container(
-                  key: _imageKey,
-                  color: Colors.black,
-                  child: Image.memory(
-                    _latestFrame!,
-                    fit: BoxFit.contain,
-                    gaplessPlayback: true,
-                    width: double.infinity,
-                    height: double.infinity,
+              child: Stack(
+                children: [
+                  GestureDetector(
+                    onTapUp: _onTapUp,
+                    onDoubleTap: _onDoubleTap,
+                    onLongPressEnd: _onLongPressEnd,
+                    onPanUpdate: _onPanUpdate,
+                    child: Container(
+                      key: _imageKey,
+                      color: Colors.black,
+                      child: _latestFrame != null
+                          ? Image.memory(
+                              _latestFrame!,
+                              fit: BoxFit.contain,
+                              gaplessPlayback: true,
+                              width: double.infinity,
+                              height: double.infinity,
+                            )
+                          : const Center(
+                              child: CircularProgressIndicator()),
+                    ),
                   ),
-                ),
+                  if (_cameraActive && _latestCameraFrame != null)
+                    Positioned(
+                      right: 8,
+                      top: 8,
+                      child: Container(
+                        width: 120,
+                        height: 90,
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.white54, width: 1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(7),
+                          child: Image.memory(
+                            _latestCameraFrame!,
+                            fit: BoxFit.cover,
+                            gaplessPlayback: true,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
             // Control toolbar
@@ -347,6 +420,18 @@ class _RemoteAccessScreenState extends State<RemoteAccessScreen> {
               'input_type': 'scroll',
               'delta_y': -1,
             }),
+          ),
+          _toolbarButton(
+            icon: _cameraActive ? Icons.videocam : Icons.videocam_off,
+            label: _cameraActive ? 'Cam On' : 'Cam',
+            active: _cameraActive,
+            onTap: () {
+              if (_cameraActive) {
+                _service.sendCameraControl('stop');
+              } else {
+                _service.sendCameraControl('start');
+              }
+            },
           ),
           _toolbarButton(
             icon: Icons.lock_outline,

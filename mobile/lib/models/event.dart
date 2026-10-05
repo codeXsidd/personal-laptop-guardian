@@ -31,4 +31,7 @@ class ActivityEvent {
 
   bool get isHighSeverity =>
       severity == 'high' || severity == 'critical';
+
+  String? get pcTimezone => payload['pc_timezone'] as String?;
+  String? get utcOffset => payload['utc_offset'] as String?;
 }

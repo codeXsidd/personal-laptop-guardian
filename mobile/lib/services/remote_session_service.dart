@@ -1,11 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
-import '../config/supabase_config.dart';
 
 class RemoteSession {
   final String id;
@@ -35,35 +32,40 @@ class RemoteSession {
   bool get isActive => status == 'active';
   bool get isPending => status == 'pending';
   bool get isApproved => status == 'approved';
-  bool get isTerminal => const {'ended', 'expired', 'revoked', 'rejected'}.contains(status);
+  bool get isTerminal =>
+      const {'ended', 'expired', 'revoked', 'rejected'}.contains(status);
 }
 
 class RemoteSessionService {
   final _supabase = Supabase.instance.client;
-  WebSocket? _ws;
-  StreamSubscription? _wsSub;
+  RealtimeChannel? _channel;
   Timer? _statusPollTimer;
   String? _currentSessionId;
-  int _reconnectAttempts = 0;
-  static const _maxReconnectAttempts = 5;
   bool _intentionalDisconnect = false;
+  bool _disposed = false;
 
   final _frameController = StreamController<Uint8List>.broadcast();
+  final _cameraFrameController = StreamController<Uint8List>.broadcast();
   final _statusController = StreamController<String>.broadcast();
   final _sessionController = StreamController<RemoteSession?>.broadcast();
+  final _cameraStateController = StreamController<bool>.broadcast();
+  bool _cameraActive = false;
 
   Stream<Uint8List> get frameStream => _frameController.stream;
+  Stream<Uint8List> get cameraFrameStream => _cameraFrameController.stream;
   Stream<String> get statusStream => _statusController.stream;
   Stream<RemoteSession?> get sessionStream => _sessionController.stream;
+  Stream<bool> get cameraStateStream => _cameraStateController.stream;
+  bool get isCameraActive => _cameraActive;
 
-  bool get isConnected => _ws != null;
+  bool get isConnected => _channel != null;
   String? get currentSessionId => _currentSessionId;
 
   Future<RemoteSession?> requestSession(String deviceId) async {
     try {
       _intentionalDisconnect = false;
-      _reconnectAttempts = 0;
       _statusController.add('Requesting remote access...');
+      debugPrint('[RemoteSession] Requesting session for device: $deviceId');
 
       final response = await _supabase.functions.invoke(
         'manage-remote-session',
@@ -73,8 +75,10 @@ class RemoteSessionService {
         },
       );
 
+      debugPrint('[RemoteSession] Request response: ${response.status}');
       if (response.status != 201) {
         final error = response.data?['error'] ?? 'Failed to request session';
+        debugPrint('[RemoteSession] Request failed: $error');
         _statusController.add('Error: $error');
         return null;
       }
@@ -83,6 +87,8 @@ class RemoteSessionService {
         response.data['session'] as Map<String, dynamic>,
       );
 
+      debugPrint(
+          '[RemoteSession] Session created: ${session.id} status=${session.status}');
       _currentSessionId = session.id;
       _sessionController.add(session);
       _statusController.add('Waiting for PC approval...');
@@ -90,6 +96,7 @@ class RemoteSessionService {
       _startStatusPolling(session.id);
       return session;
     } catch (e) {
+      debugPrint('[RemoteSession] Request error: $e');
       _statusController.add('Error: ${e.toString()}');
       return null;
     }
@@ -105,21 +112,35 @@ class RemoteSessionService {
 
   Future<void> _checkSessionStatus(String sessionId) async {
     try {
-      final result = await _supabase
-          .from('remote_sessions')
-          .select()
-          .eq('id', sessionId)
-          .single();
+      final response = await _supabase.functions.invoke(
+        'manage-remote-session',
+        body: {
+          'action': 'status',
+          'session_id': sessionId,
+        },
+      );
 
-      final session = RemoteSession.fromJson(result);
+      if (response.status != 200 || response.data == null) {
+        debugPrint('[RemoteSession] Poll: status ${response.status}');
+        return;
+      }
+
+      final session = RemoteSession.fromJson(
+        response.data['session'] as Map<String, dynamic>,
+      );
+      debugPrint(
+          '[RemoteSession] Poll: session ${session.id} status=${session.status}');
       _sessionController.add(session);
 
       if (session.isApproved || session.isActive) {
         _statusPollTimer?.cancel();
+        debugPrint(
+            '[RemoteSession] Session approved/active — connecting via Realtime');
         _statusController.add('Approved! Connecting...');
-        await _connectRelay(sessionId);
+        await _connectRealtime(sessionId);
       } else if (session.isTerminal) {
         _statusPollTimer?.cancel();
+        debugPrint('[RemoteSession] Session terminal: ${session.status}');
         _statusController.add('Session ${session.status}');
         _currentSessionId = null;
         _sessionController.add(null);
@@ -129,110 +150,122 @@ class RemoteSessionService {
     }
   }
 
-  Future<void> _connectRelay(String sessionId) async {
+  Future<void> _connectRealtime(String sessionId) async {
     try {
-      final supabaseUrl = SupabaseConfig.url;
-      final wsUrl = supabaseUrl
-          .replaceFirst('https://', 'wss://')
-          .replaceFirst('http://', 'ws://');
+      final channelName = 'remote-session-$sessionId';
+      debugPrint('[RemoteSession] Joining Realtime channel: $channelName');
 
-      final token = _supabase.auth.currentSession?.accessToken;
-      if (token == null) {
-        _statusController.add('Error: Not authenticated');
-        return;
-      }
-
-      final uri = Uri.parse(
-        '$wsUrl/functions/v1/remote-relay'
-        '?session_id=$sessionId'
-        '&role=mobile'
-        '&token=${Uri.encodeComponent(token)}',
+      _channel = _supabase.channel(
+        channelName,
+        opts: const RealtimeChannelConfig(
+          ack: false,
+          self: false,
+          private: false,
+        ),
       );
 
-      _ws = await WebSocket.connect(uri.toString());
-      _reconnectAttempts = 0;
-      _statusController.add('Connected! Receiving screen...');
-
-      _wsSub = _ws!.listen(
-        (data) {
-          if (data is List<int>) {
-            _frameController.add(Uint8List.fromList(data));
-          } else if (data is String) {
-            _handleTextMessage(data);
-          }
-        },
-        onError: (error) {
-          debugPrint('[RemoteSession] WS error: $error');
-          _attemptReconnect(sessionId);
-        },
-        onDone: () {
-          if (!_intentionalDisconnect) {
-            _attemptReconnect(sessionId);
-          }
-        },
-      );
+      _channel!
+          .onBroadcast(
+            event: 'frame',
+            callback: (payload) {
+              if (_disposed) return;
+              try {
+                // Supabase wraps broadcast: {event, payload: {data: ...}, type}
+                final inner = payload['payload'];
+                final data = (inner is Map ? inner['data'] : payload['data']) as String?;
+                if (data == null) return;
+                final bytes = base64Decode(data);
+                _frameController.add(bytes);
+              } catch (e) {
+                debugPrint('[RemoteSession] Frame decode error: $e');
+              }
+            },
+          )
+          .onBroadcast(
+            event: 'camera_frame',
+            callback: (payload) {
+              if (_disposed) return;
+              try {
+                final inner = payload['payload'];
+                final data = (inner is Map ? inner['data'] : payload['data']) as String?;
+                if (data == null) return;
+                final bytes = base64Decode(data);
+                _cameraFrameController.add(bytes);
+              } catch (e) {
+                debugPrint('[RemoteSession] Camera frame decode error: $e');
+              }
+            },
+          )
+          .onBroadcast(
+            event: 'signal',
+            callback: (payload) {
+              if (_disposed) return;
+              debugPrint('[RemoteSession] Signal received: $payload');
+            },
+          )
+          .subscribe((status, error) {
+            debugPrint(
+                '[RemoteSession] Channel status: $status error: $error');
+            if (_disposed) return;
+            if (status == RealtimeSubscribeStatus.subscribed) {
+              _statusController.add('Connected! Receiving screen...');
+            } else if (status == RealtimeSubscribeStatus.channelError) {
+              _statusController.add('Channel error: $error');
+            } else if (status == RealtimeSubscribeStatus.closed) {
+              if (!_intentionalDisconnect) {
+                _statusController.add('Connection closed');
+                disconnect();
+              }
+            }
+          });
     } catch (e) {
       _statusController.add('Connection failed: ${e.toString()}');
-      debugPrint('[RemoteSession] Connect error: $e');
-    }
-  }
-
-  Future<void> _attemptReconnect(String sessionId) async {
-    if (_intentionalDisconnect) return;
-    if (_reconnectAttempts >= _maxReconnectAttempts) {
-      _statusController.add('Reconnection failed. Please try again.');
-      disconnect();
-      return;
-    }
-
-    _reconnectAttempts++;
-    _wsSub?.cancel();
-    _ws?.close();
-    _ws = null;
-
-    final delay = Duration(seconds: _reconnectAttempts * 2);
-    _statusController.add('Reconnecting (attempt $_reconnectAttempts/$_maxReconnectAttempts)...');
-    await Future.delayed(delay);
-
-    if (_intentionalDisconnect || _currentSessionId == null) return;
-    await _connectRelay(sessionId);
-  }
-
-  void _handleTextMessage(String data) {
-    try {
-      final msg = jsonDecode(data) as Map<String, dynamic>;
-      final type = msg['type'] as String?;
-
-      if (type == 'peer_left') {
-        _statusController.add('PC disconnected');
-        disconnect();
-      } else if (type == 'peer_joined') {
-        _statusController.add('PC connected! Receiving screen...');
-      }
-    } catch (e) {
-      debugPrint('[RemoteSession] Text message parse error: $e');
+      debugPrint('[RemoteSession] Realtime connect error: $e');
     }
   }
 
   void sendInput(Map<String, dynamic> input) {
-    if (_ws == null) return;
+    if (_channel == null) return;
     try {
-      _ws!.add(jsonEncode({
-        'type': 'input',
-        ...input,
-      }));
+      _channel!.sendBroadcastMessage(
+        event: 'input',
+        payload: {
+          'type': 'input',
+          ...input,
+        },
+      );
     } catch (e) {
       debugPrint('[RemoteSession] Send input error: $e');
     }
   }
 
-  void sendPcControl(String action) {
-    if (_ws == null) return;
+  void sendCameraControl(String action) {
+    if (_channel == null) return;
     try {
-      _ws!.add(jsonEncode({
-        'type': 'pc_control',
-        'action': action,
-      }));
+      _channel!.sendBroadcastMessage(
+        event: 'camera_control',
+        payload: {
+          'type': 'camera_control',
+          'action': action,
+        },
+      );
+      _cameraActive = action == 'start';
+      _cameraStateController.add(_cameraActive);
+    } catch (e) {
+      debugPrint('[RemoteSession] Send camera_control error: $e');
+    }
+  }
+
+  void sendPcControl(String action) {
+    if (_channel == null) return;
+    try {
+      _channel!.sendBroadcastMessage(
+        event: 'pc_control',
+        payload: {
+          'type': 'pc_control',
+          'action': action,
+        },
+      );
     } catch (e) {
       debugPrint('[RemoteSession] Send pc_control error: $e');
     }
@@ -279,18 +312,23 @@ class RemoteSessionService {
   void disconnect() {
     _intentionalDisconnect = true;
     _statusPollTimer?.cancel();
-    _wsSub?.cancel();
-    _ws?.close();
-    _ws = null;
+    _cameraActive = false;
+    _cameraStateController.add(false);
+    if (_channel != null) {
+      _channel!.unsubscribe();
+      _channel = null;
+    }
     _currentSessionId = null;
-    _reconnectAttempts = 0;
     _sessionController.add(null);
   }
 
   void dispose() {
+    _disposed = true;
     disconnect();
     _frameController.close();
+    _cameraFrameController.close();
     _statusController.close();
     _sessionController.close();
+    _cameraStateController.close();
   }
 }

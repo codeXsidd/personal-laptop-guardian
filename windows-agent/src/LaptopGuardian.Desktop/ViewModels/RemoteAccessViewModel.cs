@@ -15,6 +15,8 @@ public partial class RemoteAccessViewModel : ObservableObject
     [ObservableProperty] private string? _pendingSessionId;
     [ObservableProperty] private bool _isProcessing;
 
+    public event EventHandler? NavigationRequested;
+
     public RemoteAccessViewModel(RemoteAccessService service)
     {
         _service = service;
@@ -34,6 +36,7 @@ public partial class RemoteAccessViewModel : ObservableObject
             PendingSessionId = request.SessionId;
             HasPendingRequest = true;
             Status = "Remote access requested from your phone. Approve?";
+            NavigationRequested?.Invoke(this, EventArgs.Empty);
         });
     }
 

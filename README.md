@@ -32,12 +32,18 @@ Windows Agent (C# .NET 10)  ->  Supabase (PostgreSQL + Edge Functions)  ->  Flut
 - Device pairing via one-time 6-character code
 - Push notifications for high-severity events
 - Login/logout and failed login detection
-- Process and application monitoring
+- Sleep/wake detection with power state tracking
+- Process and application monitoring with open/close times
 - USB device tracking
 - Network change monitoring
 - Windows Event Log collection
 - File-access auditing for configured directories
 - System metrics (CPU, memory, disk, battery)
+- Remote desktop access with real-time screen streaming
+- Remote webcam viewing (explicit start/stop, never automatic)
+- PC controls from phone (lock, sleep, restart, shutdown)
+- PIN lock for mobile app security
+- Data management with configurable log retention
 
 ## Prerequisites
 
@@ -53,7 +59,7 @@ Windows Agent (C# .NET 10)  ->  Supabase (PostgreSQL + Edge Functions)  ->  Flut
 cd windows-agent
 dotnet build LaptopGuardian.slnx
 
-# Run tests (165 agent tests)
+# Run tests (279 tests: 179 agent + 100 desktop)
 dotnet test LaptopGuardian.slnx
 
 # Run the agent locally (console mode)
@@ -94,6 +100,8 @@ supabase functions serve
 | `ingest-events` | API Key | Agent uploads event batches (max 100, idempotent) |
 | `heartbeat` | API Key | Agent sends liveness signal + system metrics |
 | `send-notification` | Service Role Key | Sends FCM push notifications for qualifying events |
+| `manage-remote-session` | JWT | Create, approve, end, revoke remote access sessions |
+| `remote-relay` | JWT | WebSocket relay for screen/camera frames and input |
 
 ### Database
 
@@ -115,7 +123,7 @@ cd mobile
 # Install dependencies
 flutter pub get
 
-# Run tests (73 tests)
+# Run tests (71 tests)
 flutter test
 
 # Static analysis
@@ -151,7 +159,9 @@ Supabase credentials are passed at build time via `--dart-define`. They are neve
 | Windows Event Log | System/Application event log entries |
 | Reports | CPU/memory/battery charts, event breakdown |
 | Notification Settings | Per-device notification category toggles and severity thresholds |
-| Settings | User profile, notifications, sign out |
+| Settings | User profile, notifications, data management, PIN lock, sign out |
+| Remote Access | Live screen view, touch/keyboard input, camera PiP |
+| Notification History | Event notifications with mark-read and clear |
 
 ## Implementation Status
 
@@ -169,6 +179,29 @@ Supabase credentials are passed at build time via `--dart-define`. They are neve
   - Flutter: stream subscription leak fixes, mounted checks, friendly error messages, dead code cleanup
   - Windows Agent: stop timeouts (30s), Debug.WriteLine removal
   - Security: no secrets in logs, no raw error exposure, .gitignore hardened
+- [x] **Phase 10** -- Remote Access, Camera & PC Control (complete)
+  - Remote desktop: real-time screen streaming via Supabase Realtime broadcast
+  - Webcam: WinRT MediaCapture with explicit start/stop from mobile
+  - PC controls: lock, sleep, restart, shutdown from phone
+  - Remote input: click, right-click, keyboard, scroll, drag
+  - Desktop consent UI: session approval dialog on Windows
+  - PIN lock: DPAPI-protected PBKDF2 PIN for mobile app
+  - Sleep/wake detection: `SystemEvents.PowerModeChanged` with full Supabase pipeline
+  - Dashboard: 8 event timestamps (power on/off, sleep/wake, lock/unlock, login/logout)
+  - Notification history: clear all, mark read, swipe-to-dismiss
+  - Data management: configurable log retention with security event protection
+
+## Security
+
+- Remote access requires: authenticated user, paired device, valid session, explicit PC approval
+- Camera requires: active remote session + explicit "Start Camera" action (never automatic)
+- Camera stops on: Stop Camera, session end, logout, device revoke, agent stop
+- PC controls are limited to: Lock, Sleep, Restart, Shutdown (no shell/command execution)
+- No keylogging, password capture, or credential theft
+- No UAC/Defender bypass or hidden persistence
+- All secrets loaded from environment variables, never hard-coded
+- Supabase Row Level Security on all tables
+- DPAPI encryption for local credential storage
 
 ## Documentation
 

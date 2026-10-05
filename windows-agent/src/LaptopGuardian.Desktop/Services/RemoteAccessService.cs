@@ -1,9 +1,5 @@
-using System.IO;
 using System.Net.Http;
 using System.Net.Http.Json;
-using System.Net.WebSockets;
-using System.Runtime.InteropServices;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Windows;
@@ -26,17 +22,23 @@ public sealed class RemoteAccessService : IDisposable
     private string? _deviceId;
     private string? _apiKey;
     private string? _supabaseUrl;
+    private string? _supabaseAnonKey;
     private string? _currentSessionId;
-    private ClientWebSocket? _ws;
-    private CancellationTokenSource? _wsCts;
+    private RealtimeRelay? _relay;
+    private CancellationTokenSource? _relayCts;
     private DateTime _sessionStartedAt;
+    private WebcamCapture? _webcam;
+    private CancellationTokenSource? _cameraCts;
 
     public event EventHandler<RemoteSessionRequest>? SessionRequested;
     public event EventHandler<string>? SessionEnded;
     public event EventHandler<string>? StatusChanged;
     public event EventHandler<string>? Error;
+    public event EventHandler<PcControlResult>? PcControlExecuted;
+    public event EventHandler<bool>? CameraStateChanged;
 
-    public bool IsActive => _ws?.State == WebSocketState.Open && _currentSessionId != null;
+    public bool IsActive => _relay?.IsConnected == true && _currentSessionId != null;
+    public bool IsCameraActive => _webcam?.IsRunning == true;
     public string? CurrentSessionId => _currentSessionId;
 
     public DateTime SessionStartedAt => _sessionStartedAt;
@@ -47,14 +49,21 @@ public sealed class RemoteAccessService : IDisposable
         _pollTimer.Tick += async (s, e) => await PollForSessionsAsync();
     }
 
+    private static void DebugLog(string msg)
+    {
+        System.Diagnostics.Debug.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] {msg}");
+    }
+
     public async Task InitializeAsync()
     {
         if (_initialized) return;
         _initialized = true;
 
+        DebugLog("InitializeAsync starting");
         var response = await _ipc.SendAsync("get-remote-config");
         if (!response.Success)
         {
+            DebugLog($"IPC failed: {response.ErrorMessage}");
             Error?.Invoke(this, "Failed to get remote config from agent");
             return;
         }
@@ -62,6 +71,9 @@ public sealed class RemoteAccessService : IDisposable
         _deviceId = response.GetString("device_id");
         _apiKey = response.GetString("api_key");
         _supabaseUrl = response.GetString("supabase_url");
+        _supabaseAnonKey = response.GetString("supabase_anon_key");
+
+        DebugLog($"Config: url={_supabaseUrl}, apiKey={(_apiKey?.Length > 10 ? _apiKey[..10] + "..." : "null")}, anonKey={((_supabaseAnonKey?.Length ?? 0) > 10 ? "present" : "null")}");
 
         if (string.IsNullOrEmpty(_supabaseUrl) || string.IsNullOrEmpty(_apiKey))
         {
@@ -69,6 +81,13 @@ public sealed class RemoteAccessService : IDisposable
             return;
         }
 
+        if (string.IsNullOrEmpty(_supabaseAnonKey))
+        {
+            Error?.Invoke(this, "Missing Supabase anon key — update the Windows agent service");
+            return;
+        }
+
+        DebugLog("Starting poll timer");
         _pollTimer.Start();
     }
 
@@ -77,7 +96,6 @@ public sealed class RemoteAccessService : IDisposable
     private async Task PollForSessionsAsync()
     {
         if (_supabaseUrl == null || _apiKey == null) return;
-        if (_currentSessionId != null) return;
 
         try
         {
@@ -86,22 +104,119 @@ public sealed class RemoteAccessService : IDisposable
             req.Headers.Add("x-device-api-key", _apiKey);
 
             using var resp = await _http.SendAsync(req);
-            if (!resp.IsSuccessStatusCode) return;
+            if (!resp.IsSuccessStatusCode)
+            {
+                DebugLog($"Poll HTTP {resp.StatusCode}");
+                return;
+            }
 
             var result = await resp.Content.ReadFromJsonAsync<SessionsResponse>(JsonOpts);
-            var pending = result?.Sessions?.FirstOrDefault(s => s.Status == "pending");
-            if (pending == null) return;
+            var sessions = result?.Sessions ?? [];
+            DebugLog($"Poll: {sessions.Length} sessions, currentId={_currentSessionId}");
 
-            Application.Current?.Dispatcher.Invoke(() =>
+            if (_currentSessionId != null)
             {
-                SessionRequested?.Invoke(this, new RemoteSessionRequest
+                var currentStillActive = sessions.Any(s =>
+                    s.Id == _currentSessionId &&
+                    s.Status is "approved" or "active");
+                if (!currentStillActive)
                 {
-                    SessionId = pending.Id,
-                    ExpiresAt = pending.ExpiresAt,
+                    DebugLog("Current session no longer active — ending");
+                    await EndSessionAsync("ended_externally");
+                }
+                return;
+            }
+
+            var pending = sessions.FirstOrDefault(s => s.Status == "pending");
+            if (pending != null)
+            {
+                DebugLog($"Pending session found: {pending.Id}");
+                Application.Current?.Dispatcher.Invoke(() =>
+                {
+                    SessionRequested?.Invoke(this, new RemoteSessionRequest
+                    {
+                        SessionId = pending.Id,
+                        ExpiresAt = pending.ExpiresAt,
+                    });
                 });
+            }
+
+            // Process pending PC control commands
+            var commands = result?.Commands ?? [];
+            foreach (var cmd in commands)
+            {
+                if (cmd.Status != "pending") continue;
+                DebugLog($"Executing PC control: {cmd.Action} (id={cmd.Id})");
+                Application.Current?.Dispatcher.Invoke(() =>
+                    ExecutePcControlCommand(cmd));
+            }
+        }
+        catch (Exception ex)
+        {
+            DebugLog($"Poll error: {ex.Message}");
+        }
+    }
+
+    private async void ExecutePcControlCommand(PcControlCommandDto cmd)
+    {
+        string resultText = "ok";
+        try
+        {
+            switch (cmd.Action)
+            {
+                case "lock":
+                    InputHelper.LockWorkStation();
+                    break;
+                case "sleep":
+                    InputHelper.SetSuspendState(false, false, false);
+                    break;
+                case "restart":
+                    _ = Task.Delay(1000).ContinueWith(_ => InputHelper.InitiateShutdown(restart: true));
+                    break;
+                case "shutdown":
+                    _ = Task.Delay(1000).ContinueWith(_ => InputHelper.InitiateShutdown(restart: false));
+                    break;
+                default:
+                    resultText = $"unknown action: {cmd.Action}";
+                    break;
+            }
+
+            PcControlExecuted?.Invoke(this, new PcControlResult
+            {
+                Action = cmd.Action,
+                Success = resultText == "ok",
+                Message = resultText == "ok" ? $"PC {cmd.Action} executed" : resultText,
             });
         }
-        catch { }
+        catch (Exception ex)
+        {
+            resultText = ex.Message;
+            DebugLog($"PC control error: {ex.Message}");
+        }
+
+        await AcknowledgePcControlAsync(cmd.Id, resultText);
+    }
+
+    private async Task AcknowledgePcControlAsync(string commandId, string result)
+    {
+        if (_supabaseUrl == null || _apiKey == null) return;
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Post,
+                $"{_supabaseUrl}/functions/v1/manage-remote-session");
+            req.Headers.Add("x-device-api-key", _apiKey);
+            req.Content = JsonContent.Create(new
+            {
+                action = "ack_pc_control",
+                command_id = commandId,
+                result,
+            });
+            await _http.SendAsync(req);
+        }
+        catch (Exception ex)
+        {
+            DebugLog($"Ack PC control error: {ex.Message}");
+        }
     }
 
     public async Task ApproveSessionAsync(string sessionId)
@@ -124,9 +239,9 @@ public sealed class RemoteAccessService : IDisposable
 
             _currentSessionId = sessionId;
             _sessionStartedAt = DateTime.UtcNow;
-            StatusChanged?.Invoke(this, "Session approved. Connecting...");
+            StatusChanged?.Invoke(this, "Session approved. Connecting via Realtime...");
 
-            await ConnectRelayAsync(sessionId);
+            await ConnectRealtimeAsync(sessionId);
         }
         catch (Exception ex)
         {
@@ -151,63 +266,92 @@ public sealed class RemoteAccessService : IDisposable
         catch { }
     }
 
-    private async Task ConnectRelayAsync(string sessionId)
+    private async Task ConnectRealtimeAsync(string sessionId)
     {
-        _wsCts?.Cancel();
-        _wsCts = new CancellationTokenSource();
-        var ct = _wsCts.Token;
+        DebugLog($"ConnectRealtimeAsync: session={sessionId}");
+        _relayCts?.Cancel();
+        _relayCts = new CancellationTokenSource();
+        var ct = _relayCts.Token;
 
         try
         {
-            var wsUrl = _supabaseUrl!.Replace("https://", "wss://").Replace("http://", "ws://");
-            var uri = new Uri(
-                $"{wsUrl}/functions/v1/remote-relay?session_id={sessionId}&role=desktop&api_key={Uri.EscapeDataString(_apiKey!)}");
+            _relay = new RealtimeRelay(_supabaseUrl!, _supabaseAnonKey!);
 
-            _ws = new ClientWebSocket();
-            await _ws.ConnectAsync(uri, ct);
+            _relay.StatusChanged += (_, status) =>
+            {
+                DebugLog($"Relay status: {status}");
+                Application.Current?.Dispatcher.Invoke(() =>
+                    StatusChanged?.Invoke(this, status));
+            };
+
+            _relay.TextMessageReceived += (_, payload) =>
+            {
+                DebugLog($"Relay msg: {payload[..Math.Min(100, payload.Length)]}");
+                HandleRelayMessage(payload);
+            };
+
+            _relay.Disconnected += (_, _) =>
+            {
+                DebugLog("Relay disconnected");
+                if (!ct.IsCancellationRequested)
+                {
+                    Application.Current?.Dispatcher.Invoke(() =>
+                        _ = EndSessionAsync("relay_disconnected"));
+                }
+            };
+
+            await _relay.ConnectAsync(sessionId, ct);
+            DebugLog($"Relay connected, IsConnected={_relay.IsConnected}");
 
             Application.Current?.Dispatcher.Invoke(() =>
-            {
-                StatusChanged?.Invoke(this, "Connected to relay. Streaming screen...");
-            });
+                StatusChanged?.Invoke(this, "Connected to Realtime. Streaming screen..."));
 
-            // Activate the session
             _ = ActivateSessionAsync(sessionId);
-
-            // Start screen capture + send in background
             _ = Task.Run(() => CaptureAndSendLoop(ct), ct);
-
-            // Start receiving input
-            _ = Task.Run(() => ReceiveLoop(ct), ct);
         }
         catch (Exception ex)
         {
+            DebugLog($"Realtime connect error: {ex}");
             Application.Current?.Dispatcher.Invoke(() =>
-                Error?.Invoke(this, $"Relay connection failed: {ex.Message}"));
+                Error?.Invoke(this, $"Realtime connection failed: {ex.Message}"));
             await EndSessionAsync("connection_failed");
         }
     }
 
     private async Task CaptureAndSendLoop(CancellationToken ct)
     {
-        const int targetFps = 8;
+        const int targetFps = 5;
         var frameDelay = TimeSpan.FromMilliseconds(1000.0 / targetFps);
+        int frameCount = 0;
 
-        while (!ct.IsCancellationRequested && _ws?.State == WebSocketState.Open)
+        DebugLog($"CaptureAndSendLoop starting, relay connected={_relay?.IsConnected}");
+
+        while (!ct.IsCancellationRequested && _relay?.IsConnected == true)
         {
             try
             {
                 var frame = CaptureScreen();
                 if (frame != null && frame.Length > 0)
                 {
-                    await _ws.SendAsync(frame, WebSocketMessageType.Binary, true, ct);
+                    frameCount++;
+                    if (frameCount <= 3 || frameCount % 50 == 0)
+                        DebugLog($"Sending frame #{frameCount} size={frame.Length}");
+                    await _relay.SendFrameAsync(frame, ct);
+                }
+                else if (frameCount == 0)
+                {
+                    DebugLog("CaptureScreen returned null/empty");
                 }
                 await Task.Delay(frameDelay, ct);
             }
             catch (OperationCanceledException) { break; }
-            catch (WebSocketException) { break; }
-            catch { await Task.Delay(500, ct); }
+            catch (Exception ex)
+            {
+                DebugLog($"Capture error: {ex.Message}");
+                await Task.Delay(500, ct);
+            }
         }
+        DebugLog($"CaptureAndSendLoop exited, frames sent={frameCount}");
 
         if (!ct.IsCancellationRequested)
         {
@@ -216,42 +360,28 @@ public sealed class RemoteAccessService : IDisposable
         }
     }
 
-    private async Task ReceiveLoop(CancellationToken ct)
+    private void HandleRelayMessage(string payloadJson)
     {
-        var buffer = new byte[4096];
-
-        while (!ct.IsCancellationRequested && _ws?.State == WebSocketState.Open)
+        try
         {
-            try
+            var msg = JsonSerializer.Deserialize<RelayMessage>(payloadJson, JsonOpts);
+            if (msg == null) return;
+
+            if (msg.Type == "input")
             {
-                var result = await _ws.ReceiveAsync(buffer, ct);
-                if (result.MessageType == WebSocketMessageType.Close) break;
-                if (result.MessageType != WebSocketMessageType.Text) continue;
-
-                var json = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                var msg = JsonSerializer.Deserialize<RelayMessage>(json, JsonOpts);
-
-                if (msg?.Type == "peer_left")
-                {
-                    Application.Current?.Dispatcher.Invoke(() =>
-                        _ = EndSessionAsync("mobile_disconnected"));
-                    break;
-                }
-
-                if (msg?.Type == "input")
-                {
-                    HandleInput(msg);
-                }
-                else if (msg?.Type == "pc_control")
-                {
-                    Application.Current?.Dispatcher.Invoke(() =>
-                        HandlePcControl(msg));
-                }
+                HandleInput(msg);
             }
-            catch (OperationCanceledException) { break; }
-            catch (WebSocketException) { break; }
-            catch { }
+            else if (msg.Type == "pc_control")
+            {
+                Application.Current?.Dispatcher.Invoke(() =>
+                    HandlePcControl(msg));
+            }
+            else if (msg.Type == "camera_control")
+            {
+                _ = HandleCameraControl(msg);
+            }
         }
+        catch { }
     }
 
     private static void HandleInput(RelayMessage msg)
@@ -334,26 +464,91 @@ public sealed class RemoteAccessService : IDisposable
 
     private static byte[]? CaptureScreen()
     {
-        // Screen capture is implemented at runtime to avoid
-        // static references that may trigger Application Control policies.
         return ScreenCapture.Capture();
+    }
+
+    private async Task HandleCameraControl(RelayMessage msg)
+    {
+        var action = msg.Action;
+        if (action == "start")
+            await StartCameraAsync();
+        else if (action == "stop")
+            await StopCameraAsync();
+    }
+
+    private async Task StartCameraAsync()
+    {
+        if (_webcam?.IsRunning == true) return;
+
+        _webcam = new WebcamCapture();
+        var started = await _webcam.StartAsync();
+        if (!started)
+        {
+            DebugLog("Camera: failed to start");
+            _webcam.Dispose();
+            _webcam = null;
+            Application.Current?.Dispatcher.Invoke(() =>
+                CameraStateChanged?.Invoke(this, false));
+            return;
+        }
+
+        Application.Current?.Dispatcher.Invoke(() =>
+            CameraStateChanged?.Invoke(this, true));
+
+        _cameraCts = new CancellationTokenSource();
+        _ = Task.Run(() => CameraFrameLoop(_cameraCts.Token), _cameraCts.Token);
+    }
+
+    private async Task CameraFrameLoop(CancellationToken ct)
+    {
+        const int targetFps = 5;
+        var frameDelay = TimeSpan.FromMilliseconds(1000.0 / targetFps);
+
+        while (!ct.IsCancellationRequested && _webcam?.IsRunning == true && _relay?.IsConnected == true)
+        {
+            try
+            {
+                var frame = _webcam.GetLatestFrame();
+                if (frame is { Length: > 0 })
+                {
+                    await _relay!.SendBroadcastAsync("camera_frame",
+                        Convert.ToBase64String(frame), ct);
+                }
+                await Task.Delay(frameDelay, ct);
+            }
+            catch (OperationCanceledException) { break; }
+            catch (Exception ex)
+            {
+                DebugLog($"Camera frame error: {ex.Message}");
+                await Task.Delay(500, ct);
+            }
+        }
+    }
+
+    private async Task StopCameraAsync()
+    {
+        _cameraCts?.Cancel();
+        if (_webcam != null)
+        {
+            await _webcam.StopAsync();
+            _webcam.Dispose();
+            _webcam = null;
+        }
+        Application.Current?.Dispatcher.Invoke(() =>
+            CameraStateChanged?.Invoke(this, false));
     }
 
     public async Task EndSessionAsync(string reason = "ended_normally")
     {
-        _wsCts?.Cancel();
+        await StopCameraAsync();
+        _relayCts?.Cancel();
 
-        if (_ws?.State == WebSocketState.Open)
+        if (_relay != null)
         {
-            try
-            {
-                await _ws.CloseAsync(WebSocketCloseStatus.NormalClosure, reason,
-                    new CancellationTokenSource(TimeSpan.FromSeconds(2)).Token);
-            }
-            catch { }
+            try { await _relay.DisconnectAsync(); } catch { }
+            _relay.Dispose();
+            _relay = null;
         }
-        _ws?.Dispose();
-        _ws = null;
 
         if (_supabaseUrl != null && _apiKey != null && _currentSessionId != null)
         {
@@ -382,8 +577,8 @@ public sealed class RemoteAccessService : IDisposable
     public void Dispose()
     {
         _pollTimer.Stop();
-        _wsCts?.Cancel();
-        _ws?.Dispose();
+        _relayCts?.Cancel();
+        _relay?.Dispose();
         _http.Dispose();
     }
 
@@ -413,6 +608,7 @@ internal sealed class RelayMessage
 internal sealed class SessionsResponse
 {
     [JsonPropertyName("sessions")] public RemoteSessionDto[]? Sessions { get; set; }
+    [JsonPropertyName("commands")] public PcControlCommandDto[]? Commands { get; set; }
 }
 
 internal sealed class RemoteSessionDto
@@ -420,4 +616,18 @@ internal sealed class RemoteSessionDto
     [JsonPropertyName("id")] public string Id { get; set; } = "";
     [JsonPropertyName("status")] public string Status { get; set; } = "";
     [JsonPropertyName("expires_at")] public DateTime ExpiresAt { get; set; }
+}
+
+internal sealed class PcControlCommandDto
+{
+    [JsonPropertyName("id")] public string Id { get; set; } = "";
+    [JsonPropertyName("action")] public string Action { get; set; } = "";
+    [JsonPropertyName("status")] public string Status { get; set; } = "";
+}
+
+public sealed class PcControlResult
+{
+    public string Action { get; set; } = "";
+    public bool Success { get; set; }
+    public string Message { get; set; } = "";
 }

@@ -15,6 +15,8 @@ public sealed class SessionMonitor : IEventMonitor
     private readonly ILogger<SessionMonitor> _logger;
     private EventLogWatcher? _watcher;
     private string? _deviceId;
+    private readonly Dictionary<string, DateTimeOffset> _recentEvents = new();
+    private static readonly TimeSpan DeduplicationWindow = TimeSpan.FromSeconds(30);
 
     public string MonitorName => "Session";
 
@@ -84,11 +86,30 @@ public sealed class SessionMonitor : IEventMonitor
 
             var (eventType, payload) = parsed.Value;
 
+            // Time-windowed deduplication: skip if same (username, eventType) fired within 30 seconds
+            var username = payload.GetValueOrDefault("username")?.ToString() ?? "unknown";
+            var dedupeKey = $"{eventType}:{username}";
+            var now = DateTimeOffset.UtcNow;
+
+            lock (_recentEvents)
+            {
+                if (_recentEvents.TryGetValue(dedupeKey, out var lastTime)
+                    && (now - lastTime) < DeduplicationWindow)
+                {
+                    _logger.LogDebug(
+                        "SessionMonitor: Skipping duplicate {EventType} for {Username} (within {Window}s window)",
+                        eventType, username, DeduplicationWindow.TotalSeconds);
+                    return;
+                }
+
+                _recentEvents[dedupeKey] = now;
+            }
+
             var deviceEvent = DeviceEvent.Create(_deviceId, eventType, EventSeverity.Info, payload);
             await _eventStore.InsertEventAsync(deviceEvent);
 
             _logger.LogDebug("Session event recorded: {EventType} for {Username}",
-                eventType, payload.GetValueOrDefault("username"));
+                eventType, username);
         }
         catch (Exception ex)
         {

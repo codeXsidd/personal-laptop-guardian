@@ -52,6 +52,18 @@ public partial class MainViewModel : ObservableObject
 
         CurrentView = Dashboard;
 
+        RemoteAccess.NavigationRequested += (_, _) =>
+        {
+            Navigate("RemoteAccess");
+            // Bring window to front
+            if (System.Windows.Application.Current?.MainWindow is { } win)
+            {
+                if (win.WindowState == System.Windows.WindowState.Minimized)
+                    win.WindowState = System.Windows.WindowState.Normal;
+                win.Activate();
+            }
+        };
+
         // Auto-lock timer
         _autoLockTimer = new DispatcherTimer
         {

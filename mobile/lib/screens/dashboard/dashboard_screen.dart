@@ -4,6 +4,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
 import '../../models/device.dart';
@@ -67,6 +68,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         ),
         actions: [
           IconButton(
+            icon: const Icon(Icons.notifications_outlined),
+            tooltip: 'Notification history',
+            onPressed: () => context.push('/notifications/${widget.deviceId}'),
+          ),
+          IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _invalidateAll,
           ),
@@ -93,6 +99,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             ),
             const SizedBox(height: 16),
             _QuickActions(deviceId: deviceId),
+            const SizedBox(height: 16),
+            deviceAsync.when(
+              loading: () => const SizedBox.shrink(),
+              error: (_, _) => const SizedBox.shrink(),
+              data: (device) => device != null
+                  ? _PcControls(device: device)
+                  : const SizedBox.shrink(),
+            ),
             const SizedBox(height: 16),
             deviceAsync.when(
               loading: () => const SizedBox.shrink(),
@@ -131,59 +145,195 @@ class _DeviceHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final statusColor = device.isOnline
-        ? Colors.green
-        : device.isPairing
-            ? Colors.orange
-            : Colors.grey;
 
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(Icons.laptop_windows, size: 40, color: theme.colorScheme.primary),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(device.displayName,
-                      style: theme.textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w600)),
-                  Text(device.machineName,
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-                  if (device.osVersion != null)
-                    Text(device.osVersion!,
-                        style: theme.textTheme.bodySmall
-                            ?.copyWith(color: theme.colorScheme.outline)),
-                ],
-              ),
-            ),
-            Column(
+            Row(
               children: [
-                Container(
-                  width: 12,
-                  height: 12,
-                  decoration: BoxDecoration(
-                      color: statusColor, shape: BoxShape.circle),
+                Icon(Icons.laptop_windows, size: 32, color: theme.colorScheme.primary),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(device.displayName,
+                          style: theme.textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w600)),
+                      if (device.machineName != device.displayName)
+                        Text(device.machineName,
+                            style: theme.textTheme.bodySmall
+                                ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 4),
-                Text(device.status.toUpperCase(),
-                    style: theme.textTheme.labelSmall
-                        ?.copyWith(color: statusColor)),
-                if (device.lastSeenAt != null) ...[
-                  const SizedBox(height: 2),
-                  Text(timeago.format(device.lastSeenAt!),
-                      style: theme.textTheme.labelSmall
-                          ?.copyWith(color: theme.colorScheme.outline)),
-                ],
               ],
             ),
+            const SizedBox(height: 16),
+            _StatusRow(
+              label: 'Laptop',
+              value: device.powerStateDisplay,
+              color: device.isLaptopOn
+                  ? Colors.green
+                  : device.isLaptopOff
+                      ? Colors.red
+                      : Colors.orange,
+              icon: device.isLaptopOn
+                  ? Icons.power_settings_new
+                  : Icons.power_off,
+            ),
+            const SizedBox(height: 8),
+            _StatusRow(
+              label: 'Connection',
+              value: device.isOnline
+                  ? 'Online'
+                  : device.isPairing
+                      ? 'Pairing'
+                      : 'Offline',
+              color: device.isOnline
+                  ? Colors.green
+                  : device.isPairing
+                      ? Colors.orange
+                      : Colors.grey,
+              icon: device.isOnline ? Icons.wifi : Icons.wifi_off,
+            ),
+            const SizedBox(height: 8),
+            _StatusRow(
+              label: 'Windows User',
+              value: device.userSessionDisplay,
+              color: device.userSessionState == 'logged_in'
+                  ? Colors.green
+                  : device.userSessionState == 'locked'
+                      ? Colors.orange
+                      : Colors.grey,
+              icon: device.userSessionState == 'logged_in'
+                  ? Icons.person
+                  : device.userSessionState == 'locked'
+                      ? Icons.lock
+                      : Icons.person_off,
+            ),
+            const SizedBox(height: 12),
+            const Divider(height: 1),
+            const SizedBox(height: 8),
+            if (device.lastStartupAt != null)
+              _DetailRow(label: 'Last Power On', time: device.lastStartupAt!),
+            if (device.lastShutdownAt != null) ...[
+              const SizedBox(height: 4),
+              _DetailRow(label: 'Last Power Off', time: device.lastShutdownAt!),
+            ],
+            if (device.lastSleepAt != null) ...[
+              const SizedBox(height: 4),
+              _DetailRow(label: 'Last Sleep', time: device.lastSleepAt!),
+            ],
+            if (device.lastWakeAt != null) ...[
+              const SizedBox(height: 4),
+              _DetailRow(label: 'Last Wake', time: device.lastWakeAt!),
+            ],
+            if (device.lastLockAt != null) ...[
+              const SizedBox(height: 4),
+              _DetailRow(label: 'Last Lock', time: device.lastLockAt!),
+            ],
+            if (device.lastUnlockAt != null) ...[
+              const SizedBox(height: 4),
+              _DetailRow(label: 'Last Unlock', time: device.lastUnlockAt!),
+            ],
+            if (device.lastLoginAt != null) ...[
+              const SizedBox(height: 4),
+              _DetailRow(label: 'Last Login', time: device.lastLoginAt!),
+            ],
+            if (device.lastLogoutAt != null) ...[
+              const SizedBox(height: 4),
+              _DetailRow(label: 'Last Logout', time: device.lastLogoutAt!),
+            ],
+            if (device.lastSeenAt != null) ...[
+              const SizedBox(height: 4),
+              _DetailRow(
+                label: device.isLaptopOff ? 'Last seen' : 'Last heartbeat',
+                time: device.lastSeenAt!,
+              ),
+            ],
           ],
         ),
       ),
+    );
+  }
+}
+
+class _StatusRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+  final IconData icon;
+
+  const _StatusRow({
+    required this.label,
+    required this.value,
+    required this.color,
+    required this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 8),
+        SizedBox(
+          width: 100,
+          child: Text(label,
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+        ),
+        Icon(icon, size: 16, color: color),
+        const SizedBox(width: 4),
+        Text(value,
+            style: theme.textTheme.bodyMedium
+                ?.copyWith(fontWeight: FontWeight.w600, color: color)),
+      ],
+    );
+  }
+}
+
+class _DetailRow extends StatelessWidget {
+  final String label;
+  final DateTime time;
+
+  const _DetailRow({required this.label, required this.time});
+
+  static final _dateFmt = DateFormat('d MMM yyyy');
+  static final _timeFmt = DateFormat('h:mm:ss a');
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final local = time.toLocal();
+    final tz = local.timeZoneName;
+    final formatted = '${_dateFmt.format(local)} ${_timeFmt.format(local)} $tz';
+    return Row(
+      children: [
+        SizedBox(
+          width: 118,
+          child: Text(label,
+              style: theme.textTheme.labelSmall
+                  ?.copyWith(color: theme.colorScheme.outline)),
+        ),
+        Expanded(
+          child: Text(formatted,
+              style: theme.textTheme.labelSmall
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+        ),
+        Text(timeago.format(local),
+            style: theme.textTheme.labelSmall
+                ?.copyWith(color: theme.colorScheme.outline)),
+      ],
     );
   }
 }
@@ -450,6 +600,197 @@ class _QuickActionTile extends StatelessWidget {
   }
 }
 
+class _PcControls extends ConsumerStatefulWidget {
+  final Device device;
+
+  const _PcControls({required this.device});
+
+  @override
+  ConsumerState<_PcControls> createState() => _PcControlsState();
+}
+
+class _PcControlsState extends ConsumerState<_PcControls> {
+  bool _busy = false;
+
+  bool get _canControl => widget.device.isOnline && !_busy;
+
+  Future<void> _send(String action, {bool confirm = false}) async {
+    if (!_canControl) return;
+
+    if (confirm) {
+      final labels = {
+        'restart': 'Restart PC',
+        'shutdown': 'Shut Down PC',
+      };
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(labels[action] ?? action),
+          content: Text(
+            action == 'restart'
+                ? 'This will restart the PC. Unsaved work will be lost.'
+                : 'This will shut down the PC. Unsaved work will be lost.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              style: FilledButton.styleFrom(backgroundColor: Colors.red),
+              child: Text(labels[action]!),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+    }
+
+    setState(() => _busy = true);
+    try {
+      final service = DeviceService(ref.read(supabaseClientProvider));
+      await service.sendPcControl(widget.device.id, action);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_successMessage(action)),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  String _successMessage(String action) => switch (action) {
+    'lock' => 'Lock command sent',
+    'sleep' => 'Sleep command sent',
+    'restart' => 'Restart command sent',
+    'shutdown' => 'Shutdown command sent',
+    _ => 'Command sent',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final enabled = _canControl;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.settings_remote,
+                    size: 20, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Text('PC Controls',
+                    style: theme.textTheme.titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w600)),
+                const Spacer(),
+                if (!widget.device.isOnline)
+                  Text('PC Offline',
+                      style: theme.textTheme.labelSmall
+                          ?.copyWith(color: theme.colorScheme.outline)),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _PcControlButton(
+                    icon: Icons.lock_outline,
+                    label: 'Lock PC',
+                    onTap: enabled ? () => _send('lock') : null,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _PcControlButton(
+                    icon: Icons.nightlight_round,
+                    label: 'Sleep PC',
+                    onTap: enabled ? () => _send('sleep') : null,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _PcControlButton(
+                    icon: Icons.restart_alt,
+                    label: 'Restart PC',
+                    onTap: enabled
+                        ? () => _send('restart', confirm: true)
+                        : null,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _PcControlButton(
+                    icon: Icons.power_settings_new,
+                    label: 'Shut Down PC',
+                    color: Colors.red,
+                    onTap: enabled
+                        ? () => _send('shutdown', confirm: true)
+                        : null,
+                  ),
+                ),
+              ],
+            ),
+            if (_busy) ...[
+              const SizedBox(height: 8),
+              const LinearProgressIndicator(),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PcControlButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+  final Color? color;
+
+  const _PcControlButton({
+    required this.icon,
+    required this.label,
+    this.onTap,
+    this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final effectiveColor =
+        onTap != null ? (color ?? theme.colorScheme.primary) : theme.disabledColor;
+
+    return OutlinedButton.icon(
+      onPressed: onTap,
+      icon: Icon(icon, size: 18, color: effectiveColor),
+      label: Text(label, style: TextStyle(color: effectiveColor)),
+      style: OutlinedButton.styleFrom(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        side: BorderSide(color: effectiveColor.withValues(alpha: 0.4)),
+      ),
+    );
+  }
+}
+
 class _EventBreakdown extends StatelessWidget {
   final Map<String, int> counts;
 
@@ -596,8 +937,6 @@ class _ConnectionStatus extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isOnline = device.isOnline;
-    final isPairing = device.isPairing;
 
     return Card(
       child: Padding(
@@ -605,63 +944,59 @@ class _ConnectionStatus extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Connection',
+            Text('Status Details',
                 style: theme.textTheme.titleSmall
                     ?.copyWith(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Container(
-                  width: 10,
-                  height: 10,
-                  decoration: BoxDecoration(
-                    color: isOnline
-                        ? Colors.green
-                        : isPairing
-                            ? Colors.orange
-                            : Colors.grey,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  isOnline
-                      ? 'Online and paired'
-                      : isPairing
-                          ? 'Awaiting pairing'
-                          : 'Offline (paired)',
-                  style: theme.textTheme.bodyMedium,
-                ),
-              ],
-            ),
-            if (!isOnline && !isPairing) ...[
-              const SizedBox(height: 8),
-              Text(
-                'The laptop is offline but still paired. '
-                'It will reconnect automatically when it comes back online.',
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.outline),
-              ),
-            ],
-            if (isPairing) ...[
-              const SizedBox(height: 8),
-              Text(
-                'The device is registered but not yet paired. '
-                'Enter the pairing code shown in the agent log on the laptop.',
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.outline),
-              ),
-            ],
-            if (device.lastSeenAt != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                'Last seen: ${timeago.format(device.lastSeenAt!)}',
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.outline),
-              ),
-            ],
+            const SizedBox(height: 12),
+            _statusDetail(theme, 'Laptop Power', device.powerStateDisplay),
+            _statusDetail(theme, 'Connection',
+                device.isOnline ? 'Online' : device.isPairing ? 'Pairing' : 'Offline'),
+            _statusDetail(theme, 'Windows User', device.userSessionDisplay),
+            if (device.lastStartupAt != null)
+              _statusDetail(theme, 'Last Startup',
+                  _formatTime(device.lastStartupAt!)),
+            if (device.lastShutdownAt != null)
+              _statusDetail(theme, 'Last Shutdown',
+                  _formatTime(device.lastShutdownAt!)),
+            if (device.lastSeenAt != null)
+              _statusDetail(theme, 'Last Heartbeat',
+                  _formatTime(device.lastSeenAt!)),
+            if (device.osVersion != null)
+              _statusDetail(theme, 'OS', device.osVersion!),
+            if (device.agentVersion != null)
+              _statusDetail(theme, 'Agent Version', device.agentVersion!),
           ],
         ),
+      ),
+    );
+  }
+
+  static final _dateFmt = DateFormat('d MMM yyyy');
+  static final _timeFmt = DateFormat('h:mm:ss a');
+
+  static String _formatTime(DateTime dt) {
+    final local = dt.toLocal();
+    final tz = local.timeZoneName;
+    return '${_dateFmt.format(local)} ${_timeFmt.format(local)} $tz';
+  }
+
+  Widget _statusDetail(ThemeData theme, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(label,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+          ),
+          Expanded(
+            child: Text(value,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(fontWeight: FontWeight.w500)),
+          ),
+        ],
       ),
     );
   }
@@ -792,7 +1127,7 @@ class _EventRow extends StatelessWidget {
               ],
             ),
           ),
-          Text(timeago.format(event.timestamp),
+          Text(timeago.format(event.timestamp.toLocal()),
               style: theme.textTheme.labelSmall
                   ?.copyWith(color: theme.colorScheme.outline)),
         ],

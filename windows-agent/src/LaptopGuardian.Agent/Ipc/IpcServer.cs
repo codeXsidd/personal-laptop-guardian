@@ -330,6 +330,7 @@ public sealed class IpcServer : IHostedService, IDisposable
                 ["device_id"] = identity.ServerDeviceId,
                 ["api_key"] = identity.ApiKey,
                 ["supabase_url"] = _options.SupabaseUrl,
+                ["supabase_anon_key"] = _options.SupabaseAnonKey,
             }
         };
     }

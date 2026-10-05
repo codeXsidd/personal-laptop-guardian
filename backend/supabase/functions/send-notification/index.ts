@@ -101,26 +101,67 @@ function arrayBufferToBase64Url(buffer: ArrayBuffer): string {
 
 function eventDisplayName(eventType: string): string {
   const names: Record<string, string> = {
-    session_login: "Login",
-    session_logout: "Logout",
-    session_lock: "Screen Lock",
-    session_unlock: "Screen Unlock",
-    login_failed: "Login Failed",
+    system_startup: "Laptop is ON",
+    system_shutdown: "Laptop is shutting down",
+    system_sleep: "Laptop is sleeping",
+    system_wake: "Laptop woke up",
+    agent_started: "Laptop Guardian started",
+    session_login: "Windows user logged in",
+    session_logout: "Windows user logged out",
+    session_lock: "PC locked",
+    session_unlock: "PC unlocked",
+    login_failed: "Login attempt failed",
     process_start: "App Started",
     process_stop: "App Stopped",
-    usb_connected: "USB Connected",
-    usb_disconnected: "USB Disconnected",
-    network_connected: "Network Connected",
-    network_disconnected: "Network Disconnected",
-    network_changed: "Network Changed",
+    usb_connected: "USB device connected",
+    usb_disconnected: "USB device disconnected",
+    network_connected: "Network connected",
+    network_disconnected: "Network disconnected",
+    network_changed: "Network changed",
     eventlog_entry: "Event Log",
-    file_access: "File Access",
+    file_access: "File accessed",
     system_metrics: "System Metrics",
-    agent_started: "Agent Started",
-    system_startup: "System Startup",
-    system_shutdown: "System Shutdown",
   };
-  return names[eventType] ?? eventType;
+  return names[eventType] ?? eventType.replaceAll("_", " ");
+}
+
+function eventNotificationBody(
+  eventType: string,
+  deviceName: string,
+  timeStr: string,
+): string {
+  switch (eventType) {
+    case "system_startup":
+      return `My Laptop is ON\nStarted at ${timeStr}`;
+    case "system_shutdown":
+      return `My Laptop is shutting down\nShutdown started at ${timeStr}`;
+    case "system_sleep":
+      return `My Laptop is sleeping\nSleep at ${timeStr}`;
+    case "system_wake":
+      return `My Laptop woke up\nWake at ${timeStr}`;
+    case "agent_started":
+      return `Laptop Guardian started on ${deviceName}\nTime: ${timeStr}`;
+    case "session_login":
+      return `A Windows user logged in\nTime: ${timeStr}`;
+    case "session_logout":
+      return `A Windows user logged out\nTime: ${timeStr}`;
+    case "session_lock":
+      return `PC locked\nTime: ${timeStr}`;
+    case "session_unlock":
+      return `PC unlocked\nTime: ${timeStr}`;
+    case "login_failed":
+      return `Login attempt failed on ${deviceName}\nTime: ${timeStr}`;
+    case "usb_connected":
+      return `USB device connected to ${deviceName}\nTime: ${timeStr}`;
+    case "usb_disconnected":
+      return `USB device disconnected from ${deviceName}\nTime: ${timeStr}`;
+    case "network_connected":
+      return `${deviceName} connected to network\nTime: ${timeStr}`;
+    case "network_disconnected":
+      return `${deviceName} disconnected from network\nTime: ${timeStr}`;
+    default:
+      return `${deviceName}: ${eventDisplayName(eventType)}\nTime: ${timeStr}`;
+  }
 }
 
 Deno.serve(async (req) => {
@@ -196,6 +237,8 @@ Deno.serve(async (req) => {
     file_access: "info",
     system_startup: "info",
     system_shutdown: "info",
+    system_sleep: "info",
+    system_wake: "info",
     agent_started: "info",
   };
 
@@ -240,10 +283,23 @@ Deno.serve(async (req) => {
   for (const evt of eventsToNotify) {
     const isHighSeverity = evt.severity === "high" || evt.severity === "critical";
     const deviceName = device.device_name ?? device.machine_name ?? "Unknown";
+
+    // Format event time in a human-readable way
+    const eventDate = new Date(evt.timestamp);
+    const timeStr = eventDate.toLocaleTimeString("en-IN", {
+      hour: "numeric",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: true,
+      timeZone: (evt.payload?.pc_timezone as string) || "Asia/Kolkata",
+      timeZoneName: "short",
+    });
+
     const title = isHighSeverity
       ? `[${evt.severity.toUpperCase()}] ${eventDisplayName(evt.event_type)}`
       : eventDisplayName(evt.event_type);
-    const bodyText = `${deviceName}: ${eventDisplayName(evt.event_type)} at ${new Date(evt.timestamp).toLocaleTimeString()}`;
+    const eventTimestamp = evt.timestamp as string;
+    const bodyText = eventNotificationBody(evt.event_type, deviceName, timeStr);
 
     for (const token of tokens) {
       const dedupeKey = `${evt.id}:${token.fcm_token}`;
@@ -266,6 +322,7 @@ Deno.serve(async (req) => {
                 device_id: body.device_id,
                 event_type: evt.event_type,
                 severity: evt.severity,
+                event_timestamp: eventTimestamp,
                 title,
                 body: bodyText,
               },

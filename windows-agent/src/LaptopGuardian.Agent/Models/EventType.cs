@@ -21,4 +21,6 @@ public static class EventType
     public const string EventLogEntry = "eventlog_entry";
     public const string FileAccess = "file_access";
     public const string SystemMetrics = "system_metrics";
+    public const string SystemSleep = "system_sleep";
+    public const string SystemWake = "system_wake";
 }

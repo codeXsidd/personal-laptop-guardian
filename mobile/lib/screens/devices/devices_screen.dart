@@ -168,7 +168,7 @@ class _DeviceCard extends StatelessWidget {
                     if (device.lastSeenAt != null) ...[
                       const SizedBox(height: 2),
                       Text(
-                        'Last seen ${timeago.format(device.lastSeenAt!)}',
+                        'Last seen ${timeago.format(device.lastSeenAt!.toLocal())}',
                         style: theme.textTheme.bodySmall
                             ?.copyWith(color: theme.colorScheme.outline),
                       ),

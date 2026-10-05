@@ -38,7 +38,16 @@ Deno.serve(async (req) => {
       .in("status", ["pending", "approved"])
       .lt("expires_at", now);
 
-    return jsonResponse({ sessions: data ?? [] });
+    // Fetch pending PC control commands for this device
+    const { data: commands } = await admin
+      .from("pc_control_commands")
+      .select("*")
+      .eq("device_id", device.id)
+      .eq("status", "pending")
+      .gt("created_at", new Date(Date.now() - 2 * 60 * 1000).toISOString())
+      .order("created_at", { ascending: true });
+
+    return jsonResponse({ sessions: data ?? [], commands: commands ?? [] });
   }
 
   if (req.method !== "POST") return errorResponse("Method not allowed", 405);
@@ -51,6 +60,27 @@ Deno.serve(async (req) => {
   }
 
   const action = body.action as string;
+
+  // Mobile polls session status
+  if (action === "status") {
+    const userId = await getUserIdFromAuth(req.headers.get("authorization"));
+    if (!userId) return errorResponse("Authentication required", 401);
+
+    const sessionId = body.session_id as string;
+    if (!sessionId) return errorResponse("session_id required", 400);
+
+    const { data: session, error } = await admin
+      .from("remote_sessions")
+      .select("*")
+      .eq("id", sessionId)
+      .eq("requested_by", userId)
+      .single();
+
+    if (error || !session) {
+      return errorResponse("Session not found", 404);
+    }
+    return jsonResponse({ session });
+  }
 
   // Mobile requests a remote session
   if (action === "request") {
@@ -75,18 +105,14 @@ Deno.serve(async (req) => {
       return errorResponse("Device is not online", 400);
     }
 
-    // Reject if an active session already exists
-    const { data: existing } = await admin
+    // End any existing pending/approved/active sessions for this device.
+    // If the mobile is requesting a new session, the old one is stale.
+    await admin
       .from("remote_sessions")
-      .select("id")
+      .update({ status: "ended", ended_at: now, end_reason: "replaced_by_new_request" })
       .eq("device_id", deviceId)
       .in("status", ["pending", "approved", "active"])
-      .gt("expires_at", now)
-      .limit(1);
-
-    if (existing && existing.length > 0) {
-      return errorResponse("An active session already exists for this device", 409);
-    }
+      .gt("expires_at", now);
 
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
     const { data: session, error } = await admin
@@ -219,5 +245,88 @@ Deno.serve(async (req) => {
     return errorResponse("Authentication required", 401);
   }
 
-  return errorResponse("Unknown action. Use: request, approve, reject, activate, end, revoke", 400);
+  // Mobile sends a PC control command (no active remote session required)
+  if (action === "pc_control") {
+    const userId = await getUserIdFromAuth(req.headers.get("authorization"));
+    if (!userId) return errorResponse("Authentication required", 401);
+
+    const deviceId = body.device_id as string;
+    const command = body.command as string;
+    if (!deviceId) return errorResponse("device_id required", 400);
+    if (!command || !["lock", "sleep", "restart", "shutdown"].includes(command)) {
+      return errorResponse("command must be one of: lock, sleep, restart, shutdown", 400);
+    }
+
+    // Verify device belongs to user and is online
+    const { data: device } = await admin
+      .from("devices")
+      .select("id, user_id, status")
+      .eq("id", deviceId)
+      .single();
+
+    if (!device || device.user_id !== userId) {
+      return errorResponse("Device not found or not owned", 403);
+    }
+
+    if (device.status !== "online") {
+      return errorResponse("Device is not online", 400);
+    }
+
+    // Expire any stale pending commands for this device
+    await admin
+      .from("pc_control_commands")
+      .update({ status: "expired" })
+      .eq("device_id", deviceId)
+      .eq("status", "pending")
+      .lt("created_at", new Date(Date.now() - 2 * 60 * 1000).toISOString());
+
+    // Insert the command
+    const { data: cmd, error } = await admin
+      .from("pc_control_commands")
+      .insert({
+        device_id: deviceId,
+        requested_by: userId,
+        action: command,
+        status: "pending",
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Failed to create PC control command:", error);
+      return errorResponse("Failed to create command", 500);
+    }
+
+    return jsonResponse({ command: cmd }, 201);
+  }
+
+  // Device acknowledges a PC control command
+  if (action === "ack_pc_control") {
+    const apiKey = req.headers.get("x-device-api-key");
+    if (!apiKey) return errorResponse("x-device-api-key required", 401);
+    const device = await authenticateDevice(apiKey);
+    if (!device) return errorResponse("Invalid device API key", 401);
+
+    const commandId = body.command_id as string;
+    const result = (body.result as string) || "ok";
+    const newStatus = result === "ok" ? "executed" : "failed";
+
+    if (!commandId) return errorResponse("command_id required", 400);
+
+    const { data: cmd, error } = await admin
+      .from("pc_control_commands")
+      .update({ status: newStatus, executed_at: now, result })
+      .eq("id", commandId)
+      .eq("device_id", device.id)
+      .eq("status", "pending")
+      .select()
+      .single();
+
+    if (error || !cmd) {
+      return errorResponse("Command not found or already processed", 404);
+    }
+    return jsonResponse({ command: cmd });
+  }
+
+  return errorResponse("Unknown action. Use: request, approve, reject, activate, end, revoke, pc_control, ack_pc_control", 400);
 });

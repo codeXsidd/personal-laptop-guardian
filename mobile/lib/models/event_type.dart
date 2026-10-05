@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 enum EventCategory {
+  power,
   session,
   process,
   usb,
@@ -29,6 +30,8 @@ abstract final class EventTypes {
   static const eventlogEntry = 'eventlog_entry';
   static const fileAccess = 'file_access';
   static const systemMetrics = 'system_metrics';
+  static const systemSleep = 'system_sleep';
+  static const systemWake = 'system_wake';
 
   static const sessionTypes = [
     sessionLogin,
@@ -50,24 +53,26 @@ abstract final class EventTypes {
 
   static String displayName(String type) {
     return switch (type) {
-      agentStarted => 'Agent Started',
-      systemStartup => 'System Startup',
-      systemShutdown => 'System Shutdown',
-      sessionLogin => 'Login',
-      sessionLogout => 'Logout',
-      sessionLock => 'Screen Lock',
-      sessionUnlock => 'Screen Unlock',
-      loginFailed => 'Login Failed',
+      agentStarted => 'Laptop Guardian Started',
+      systemStartup => 'Laptop Turned ON',
+      systemShutdown => 'Laptop Shutting Down',
+      sessionLogin => 'Windows User Logged In',
+      sessionLogout => 'Windows User Logged Out',
+      sessionLock => 'PC Locked',
+      sessionUnlock => 'PC Unlocked',
+      loginFailed => 'Login Attempt Failed',
       processStart => 'App Started',
       processStop => 'App Stopped',
-      usbConnected => 'USB Connected',
-      usbDisconnected => 'USB Disconnected',
+      usbConnected => 'USB Device Connected',
+      usbDisconnected => 'USB Device Disconnected',
       networkConnected => 'Network Connected',
       networkDisconnected => 'Network Disconnected',
       networkChanged => 'Network Changed',
       eventlogEntry => 'Event Log',
-      fileAccess => 'File Access',
+      fileAccess => 'File Accessed',
       systemMetrics => 'System Metrics',
+      systemSleep => 'Laptop Sleeping',
+      systemWake => 'Laptop Woke Up',
       _ => type.replaceAll('_', ' '),
     };
   }
@@ -92,6 +97,8 @@ abstract final class EventTypes {
       eventlogEntry => Icons.article_outlined,
       fileAccess => Icons.folder_open,
       systemMetrics => Icons.monitor_heart_outlined,
+      systemSleep => Icons.nightlight_round,
+      systemWake => Icons.wb_sunny,
       _ => Icons.event_note,
     };
   }
@@ -106,7 +113,10 @@ abstract final class EventTypes {
     };
   }
 
+  static const powerTypes = [agentStarted, systemStartup, systemShutdown, systemSleep, systemWake];
+
   static EventCategory category(String type) {
+    if (powerTypes.contains(type)) return EventCategory.power;
     if (sessionTypes.contains(type)) return EventCategory.session;
     if (processTypes.contains(type)) return EventCategory.process;
     if (usbTypes.contains(type)) return EventCategory.usb;
@@ -114,5 +124,18 @@ abstract final class EventTypes {
     if (type == fileAccess) return EventCategory.file;
     if (type == eventlogEntry) return EventCategory.eventLog;
     return EventCategory.system;
+  }
+
+  static String categoryLabel(EventCategory cat) {
+    return switch (cat) {
+      EventCategory.power => 'POWER',
+      EventCategory.session => 'USER',
+      EventCategory.process => 'APP',
+      EventCategory.usb => 'USB',
+      EventCategory.network => 'NETWORK',
+      EventCategory.system => 'SYSTEM',
+      EventCategory.file => 'FILE',
+      EventCategory.eventLog => 'LOG',
+    };
   }
 }

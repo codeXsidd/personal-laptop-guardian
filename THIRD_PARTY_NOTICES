@@ -1,0 +1,190 @@
+THIRD-PARTY SOFTWARE NOTICES AND INFORMATION
+
+This project incorporates components from the projects listed below.
+
+================================================================================
+
+.NET Libraries (Windows Agent)
+================================================================================
+
+Microsoft.Data.Sqlite (10.0.12)
+License: MIT
+https://github.com/dotnet/efcore
+
+Microsoft.Extensions.Hosting (10.0.12)
+License: MIT
+https://github.com/dotnet/runtime
+
+Microsoft.Extensions.Hosting.WindowsServices (10.0.12)
+License: MIT
+https://github.com/dotnet/runtime
+
+Microsoft.Extensions.Http (10.0.12)
+License: MIT
+https://github.com/dotnet/runtime
+
+Microsoft.Win32.SystemEvents (10.0.12)
+License: MIT
+https://github.com/dotnet/runtime
+
+Serilog.Extensions.Hosting (10.0.0)
+License: Apache-2.0
+https://github.com/serilog/serilog-extensions-hosting
+
+Serilog.Settings.Configuration (10.0.1)
+License: Apache-2.0
+https://github.com/serilog/serilog-settings-configuration
+
+Serilog.Sinks.Console (6.1.1)
+License: Apache-2.0
+https://github.com/serilog/serilog-sinks-console
+
+Serilog.Sinks.File (7.0.0)
+License: Apache-2.0
+https://github.com/serilog/serilog-sinks-file
+
+System.Diagnostics.EventLog (10.0.12)
+License: MIT
+https://github.com/dotnet/runtime
+
+System.Diagnostics.PerformanceCounter (10.0.12)
+License: MIT
+https://github.com/dotnet/runtime
+
+System.Management (10.0.12)
+License: MIT
+https://github.com/dotnet/runtime
+
+System.Security.Cryptography.ProtectedData (10.0.12)
+License: MIT
+https://github.com/dotnet/runtime
+
+================================================================================
+
+.NET Libraries (Windows Desktop)
+================================================================================
+
+CommunityToolkit.Mvvm (8.4.0)
+License: MIT
+https://github.com/CommunityToolkit/dotnet
+
+Hardcodet.NotifyIcon.Wpf (1.1.0)
+License: MIT
+https://github.com/hardcodet/wpf-notifyicon
+
+Microsoft.Data.Sqlite (10.0.12)
+License: MIT
+https://github.com/dotnet/efcore
+
+Microsoft.Xaml.Behaviors.Wpf (1.1.135)
+License: MIT
+https://github.com/microsoft/XamlBehaviorsWpf
+
+QRCoder (1.8.0)
+License: MIT
+https://github.com/codebude/QRCoder
+
+SIPSorcery (10.0.16)
+License: BSD-3-Clause
+https://github.com/sipsorcery-org/sipsorcery
+
+SIPSorceryMedia.FFmpeg (10.0.16)
+License: LGPL-2.1 (dynamically linked)
+https://github.com/sipsorcery-org/sipsorcery
+Note: FFmpeg is loaded dynamically at runtime. Users may substitute
+their own FFmpeg build. Source code is available at the URL above.
+
+================================================================================
+
+.NET Test Libraries (not shipped in production)
+================================================================================
+
+Microsoft.NET.Test.Sdk (17.14.1)
+License: MIT
+https://github.com/microsoft/vstest
+
+NSubstitute (5.3.0)
+License: BSD-3-Clause
+https://github.com/nsubstitute/NSubstitute
+
+xunit (2.9.3)
+License: Apache-2.0
+https://github.com/xunit/xunit
+
+xunit.runner.visualstudio (3.1.0)
+License: Apache-2.0
+https://github.com/xunit/visualstudio.xunit
+
+================================================================================
+
+Flutter / Dart Libraries (Mobile App)
+================================================================================
+
+cupertino_icons (1.0.8)
+License: MIT
+https://pub.dev/packages/cupertino_icons
+
+crypto (3.0.7)
+License: BSD-3-Clause
+https://pub.dev/packages/crypto
+
+firebase_core (3.15.2)
+License: BSD-3-Clause
+https://pub.dev/packages/firebase_core
+
+firebase_messaging (15.2.10)
+License: BSD-3-Clause
+https://pub.dev/packages/firebase_messaging
+
+fl_chart (0.70.2)
+License: MIT
+https://pub.dev/packages/fl_chart
+
+flutter_local_notifications (19.5.0)
+License: BSD-3-Clause
+https://pub.dev/packages/flutter_local_notifications
+
+flutter_riverpod (2.6.1)
+License: MIT
+https://pub.dev/packages/flutter_riverpod
+
+flutter_secure_storage (11.2.0)
+License: BSD-3-Clause
+https://pub.dev/packages/flutter_secure_storage
+
+go_router (14.8.1)
+License: BSD-3-Clause
+https://pub.dev/packages/go_router
+
+intl (0.20.3)
+License: BSD-3-Clause
+https://pub.dev/packages/intl
+
+supabase_flutter (2.17.2)
+License: MIT
+https://pub.dev/packages/supabase_flutter
+
+timeago (3.7.1)
+License: MIT
+https://pub.dev/packages/timeago
+
+url_launcher (6.3.1)
+License: BSD-3-Clause
+https://pub.dev/packages/url_launcher
+
+================================================================================
+
+Backend (Supabase Edge Functions)
+================================================================================
+
+Supabase (self-hosted / cloud)
+License: Apache-2.0
+https://github.com/supabase/supabase
+
+Deno (runtime)
+License: MIT
+https://github.com/denoland/deno
+
+================================================================================
+
+All trademarks are the property of their respective owners.

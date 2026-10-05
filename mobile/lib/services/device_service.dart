@@ -46,6 +46,26 @@ class DeviceService {
     }
   }
 
+  Future<String> sendPcControl(String deviceId, String command) async {
+    final response = await _client.functions.invoke(
+      'manage-remote-session',
+      body: {
+        'action': 'pc_control',
+        'device_id': deviceId,
+        'command': command,
+      },
+    );
+
+    if (response.status == 201) {
+      return 'sent';
+    }
+
+    final error = response.data is Map
+        ? response.data['error'] as String? ?? 'Failed'
+        : 'Failed';
+    throw Exception(error);
+  }
+
   Future<List<Heartbeat>> getHeartbeats(
     String deviceId, {
     int limit = 60,

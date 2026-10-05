@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../providers/device_provider.dart';
+import '../../providers/event_provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../providers/pin_provider.dart';
 import 'pin_setup_screen.dart';
@@ -68,6 +69,8 @@ class SettingsScreen extends ConsumerWidget {
           _buildNotificationsCard(context, ref),
           const SizedBox(height: 16),
           _buildPinCard(context, ref),
+          const SizedBox(height: 16),
+          _buildDataManagementCard(context, ref),
           const SizedBox(height: 16),
           Card(
             child: Column(
@@ -171,6 +174,113 @@ class SettingsScreen extends ConsumerWidget {
         );
       },
     );
+  }
+
+  Widget _buildDataManagementCard(BuildContext context, WidgetRef ref) {
+    final devicesAsync = ref.watch(devicesProvider);
+    return devicesAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
+      data: (devices) {
+        if (devices.isEmpty) return const SizedBox.shrink();
+        return Card(
+          child: Column(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.delete_sweep_outlined),
+                title: const Text('Data Management'),
+                subtitle: const Text('Delete old activity logs'),
+              ),
+              const Divider(height: 1),
+              for (final device in devices)
+                ListTile(
+                  title: Text(device.displayName),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _showRetentionDialog(context, ref, device.id, device.displayName),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showRetentionDialog(
+    BuildContext context,
+    WidgetRef ref,
+    String deviceId,
+    String deviceName,
+  ) async {
+    final options = <(String label, int days)>[
+      ('Older than 7 days', 7),
+      ('Older than 30 days', 30),
+      ('Older than 90 days', 90),
+      ('Older than 1 year', 365),
+    ];
+
+    final selected = await showDialog<int>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: Text('Delete logs — $deviceName'),
+        children: [
+          for (final opt in options)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, opt.$2),
+              child: Text(opt.$1),
+            ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+
+    if (selected == null || !context.mounted) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Confirm deletion'),
+        content: Text(
+          'Delete non-security events older than $selected days for $deviceName?\n\n'
+          'Security/audit events (logins, logouts, startups, shutdowns) will be preserved.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !context.mounted) return;
+
+    try {
+      final cutoff = DateTime.now().toUtc().subtract(Duration(days: selected));
+      final deleted = await ref
+          .read(eventServiceProvider)
+          .deleteEventsOlderThan(deviceId, cutoff);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Deleted $deleted old event(s).')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Delete failed: $e')),
+        );
+      }
+    }
   }
 
   Widget _buildNotificationsCard(BuildContext context, WidgetRef ref) {

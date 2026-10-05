@@ -156,7 +156,7 @@ public sealed class EventLogMonitor : IEventMonitor
                 ["event_id"] = record.Id,
                 ["provider"] = record.ProviderName ?? "unknown",
                 ["level"] = record.LevelDisplayName ?? LevelNumberToName(record.Level),
-                ["time_created"] = (record.TimeCreated ?? DateTimeOffset.UtcNow).ToString("O")
+                ["time_created"] = new DateTimeOffset((record.TimeCreated ?? DateTime.UtcNow).ToUniversalTime(), TimeSpan.Zero).ToString("O")
             };
 
             if (record.UserId is not null)
