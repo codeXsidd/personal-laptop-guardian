@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-10-06
+
+### Added
+- Sleep/wake detection via PowerBroadcast service notification
+- Remote desktop with webcam streaming
+- PC controls: lock, sleep, restart, shutdown via Supabase polling
+- Data management with configurable retention periods
+- Relay token authorization for Realtime channel commands
+
+### Fixed
+- HTTP timeouts no longer permanently kill sync and heartbeat loops
+- Android app no longer shows "FAILED TO INITIALIZE" when built with correct env
+
+### Security
+- Camera, input, and PC control commands now require a server-generated relay token
+- Backend generates 32-byte random hex token on session approval
+- Windows agent validates relay token before processing any command
+- Unauthorized Realtime broadcast messages are rejected and logged
+
 ## [1.0.1] - 2026-10-05
 
 ### Fixed
