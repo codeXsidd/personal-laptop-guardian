@@ -99,7 +99,7 @@ class Device {
 
   bool get isLaptopOn => powerState == 'on' || powerState == 'starting';
 
-  bool get isLaptopOff => powerState == 'off';
+  bool get isLaptopOff => powerState == 'off' || powerState == 'shutting_down';
 
   String get powerStateDisplay => switch (powerState) {
     'on' => 'ON',

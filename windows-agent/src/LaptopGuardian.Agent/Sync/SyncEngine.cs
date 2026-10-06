@@ -79,6 +79,13 @@ public sealed class SyncEngine : ISyncEngine
                 var delay = GetBackoffDelay();
                 await Task.Delay(delay, ct);
             }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                // HttpClient.Timeout throws TaskCanceledException (subclass of
+                // OperationCanceledException) — do NOT break the loop for timeouts.
+                _logger.LogWarning("Sync operation timed out, will retry");
+                _consecutiveFailures++;
+            }
             catch (OperationCanceledException) { break; }
             catch (Exception ex)
             {
@@ -146,6 +153,11 @@ public sealed class SyncEngine : ISyncEngine
         catch (HttpRequestException ex)
         {
             _logger.LogWarning(ex, "Network error during sync");
+            _consecutiveFailures++;
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            _logger.LogWarning("Sync HTTP request timed out");
             _consecutiveFailures++;
         }
     }

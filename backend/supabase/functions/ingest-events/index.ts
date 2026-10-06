@@ -144,9 +144,13 @@ Deno.serve(async (req) => {
     .update({ last_seen_at: new Date().toISOString(), status: "online" })
     .eq("id", device.id);
 
-  // Update device state based on event types
+  // Update device state based on event types — sort by timestamp so the
+  // chronologically latest event wins when a batch contains multiple state changes.
+  const sortedEvents = [...body.events].sort(
+    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+  );
   const stateUpdates: Record<string, unknown> = {};
-  for (const evt of body.events) {
+  for (const evt of sortedEvents) {
     switch (evt.event_type) {
       case "system_startup":
       case "agent_started":

@@ -89,6 +89,10 @@ public sealed class HeartbeatService : IHeartbeatService
                     : Math.Min(_options.HeartbeatIntervalSeconds, 15);
                 await Task.Delay(TimeSpan.FromSeconds(interval), ct);
             }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                _logger.LogWarning("Heartbeat operation timed out, will retry");
+            }
             catch (OperationCanceledException) { break; }
             catch (Exception ex)
             {
@@ -167,6 +171,10 @@ public sealed class HeartbeatService : IHeartbeatService
         catch (BackendException ex)
         {
             _logger.LogError(ex, "Backend error during heartbeat");
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            _logger.LogWarning("Heartbeat HTTP request timed out");
         }
     }
 
