@@ -264,14 +264,6 @@ class _DeviceHeader extends StatelessWidget {
               const SizedBox(height: 4),
               _DetailRow(label: 'Last Unlock', time: device.lastUnlockAt!),
             ],
-            if (device.lastLoginAt != null) ...[
-              const SizedBox(height: 4),
-              _DetailRow(label: 'Last Login', time: device.lastLoginAt!),
-            ],
-            if (device.lastLogoutAt != null) ...[
-              const SizedBox(height: 4),
-              _DetailRow(label: 'Last Logout', time: device.lastLogoutAt!),
-            ],
             if (device.lastSeenAt != null) ...[
               const SizedBox(height: 4),
               _DetailRow(

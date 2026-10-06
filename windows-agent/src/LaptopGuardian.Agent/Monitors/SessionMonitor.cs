@@ -5,7 +5,6 @@ using LaptopGuardian.Agent.Identity;
 using LaptopGuardian.Agent.Models;
 using LaptopGuardian.Agent.Storage;
 using Microsoft.Extensions.Logging;
-using Microsoft.Win32;
 
 namespace LaptopGuardian.Agent.Monitors;
 
@@ -65,11 +64,11 @@ public sealed class SessionMonitor : IEventMonitor
         // Detect the current interactive session state on startup
         await DetectInitialSessionStateAsync(cancellationToken);
 
-        // Primary lock/unlock detection via SystemEvents.SessionSwitch
-        // Works without Security audit policy configuration
-        SystemEvents.SessionSwitch += OnSessionSwitch;
+        // SystemEvents.SessionSwitch does not fire in a headless Windows Service
+        // (no message pump). Use SCM session change notifications via custom lifetime.
+        SessionChangeLifetime.SessionChanged += OnScmSessionChange;
         _sessionEventsRegistered = true;
-        _logger.LogInformation("SessionMonitor: Registered for SessionSwitch events (lock/unlock)");
+        _logger.LogInformation("SessionMonitor: Subscribed to SCM session change events (lock/unlock)");
 
         try
         {
@@ -207,30 +206,32 @@ public sealed class SessionMonitor : IEventMonitor
         }
     }
 
-    private async void OnSessionSwitch(object sender, SessionSwitchEventArgs e)
+    private async void OnScmSessionChange(int reason)
     {
         if (_deviceId is null || _identity is null) return;
 
         try
         {
+            // SessionSwitchReason enum values:
+            // 7 = SessionLock, 8 = SessionUnlock, 5 = SessionLogon, 6 = SessionLogoff
             string? eventType = null;
             string action = "";
 
-            switch (e.Reason)
+            switch (reason)
             {
-                case SessionSwitchReason.SessionLock:
+                case 7: // SessionLock
                     eventType = EventType.SessionLock;
                     action = "locked";
                     break;
-                case SessionSwitchReason.SessionUnlock:
+                case 8: // SessionUnlock
                     eventType = EventType.SessionUnlock;
                     action = "unlocked";
                     break;
-                case SessionSwitchReason.SessionLogon:
+                case 5: // SessionLogon
                     eventType = EventType.SessionLogin;
                     action = "logged_in";
                     break;
-                case SessionSwitchReason.SessionLogoff:
+                case 6: // SessionLogoff
                     eventType = EventType.SessionLogout;
                     action = "logged_out";
                     break;
@@ -255,19 +256,19 @@ public sealed class SessionMonitor : IEventMonitor
             {
                 ["machine_name"] = _identity.MachineName,
                 ["action"] = action,
-                ["source"] = "SessionSwitch",
-                ["reason"] = e.Reason.ToString()
+                ["source"] = "SCM_SessionChange",
+                ["reason"] = reason.ToString()
             };
 
             var deviceEvent = DeviceEvent.Create(_deviceId, eventType, EventSeverity.Info, payload);
             await _eventStore.InsertEventAsync(deviceEvent);
 
-            _logger.LogInformation("SessionSwitch event recorded: {EventType} ({Reason})",
-                eventType, e.Reason);
+            _logger.LogInformation("SCM SessionChange recorded: {EventType} (reason={Reason})",
+                eventType, reason);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "SessionMonitor: Error processing SessionSwitch event");
+            _logger.LogError(ex, "SessionMonitor: Error processing SCM session change");
         }
     }
 
@@ -443,7 +444,7 @@ public sealed class SessionMonitor : IEventMonitor
     {
         if (_sessionEventsRegistered)
         {
-            SystemEvents.SessionSwitch -= OnSessionSwitch;
+            SessionChangeLifetime.SessionChanged -= OnScmSessionChange;
             _sessionEventsRegistered = false;
         }
 
@@ -462,7 +463,7 @@ public sealed class SessionMonitor : IEventMonitor
     {
         if (_sessionEventsRegistered)
         {
-            SystemEvents.SessionSwitch -= OnSessionSwitch;
+            SessionChangeLifetime.SessionChanged -= OnScmSessionChange;
             _sessionEventsRegistered = false;
         }
         _watcher?.Dispose();

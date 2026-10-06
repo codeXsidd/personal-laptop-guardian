@@ -43,6 +43,11 @@ try
         options.ServiceName = "LaptopGuardian";
     });
 
+    if (OperatingSystem.IsWindows())
+    {
+        builder.Services.AddSingleton<IHostLifetime, LaptopGuardian.Agent.SessionChangeLifetime>();
+    }
+
     builder.Services.Configure<AgentOptions>(
         builder.Configuration.GetSection(AgentOptions.SectionName));
 

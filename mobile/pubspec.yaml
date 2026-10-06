@@ -1,7 +1,7 @@
 name: laptop_guardian
 description: Personal Laptop Guardian - Monitor your Windows laptop and Android phone.
 publish_to: 'none'
-version: 1.1.0+2
+version: 1.1.1+3
 
 environment:
   sdk: ^3.13.4
