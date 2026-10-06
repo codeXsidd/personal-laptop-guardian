@@ -149,6 +149,13 @@ Deno.serve(async (req) => {
     };
     if (action === "approve") {
       updateData.approved_at = now;
+      // Generate a relay token for command authorization — both sides must
+      // present this token to send/receive camera and input commands.
+      const buf = new Uint8Array(32);
+      crypto.getRandomValues(buf);
+      updateData.relay_token = Array.from(buf)
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
     } else {
       updateData.ended_at = now;
       updateData.end_reason = "rejected_by_user";

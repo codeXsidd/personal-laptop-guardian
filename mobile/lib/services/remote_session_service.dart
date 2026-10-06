@@ -10,6 +10,7 @@ class RemoteSession {
   final String status;
   final DateTime createdAt;
   final DateTime expiresAt;
+  final String? relayToken;
 
   RemoteSession({
     required this.id,
@@ -17,6 +18,7 @@ class RemoteSession {
     required this.status,
     required this.createdAt,
     required this.expiresAt,
+    this.relayToken,
   });
 
   factory RemoteSession.fromJson(Map<String, dynamic> json) {
@@ -26,6 +28,7 @@ class RemoteSession {
       status: json['status'] as String,
       createdAt: DateTime.parse(json['created_at'] as String),
       expiresAt: DateTime.parse(json['expires_at'] as String),
+      relayToken: json['relay_token'] as String?,
     );
   }
 
@@ -41,6 +44,7 @@ class RemoteSessionService {
   RealtimeChannel? _channel;
   Timer? _statusPollTimer;
   String? _currentSessionId;
+  String? _relayToken;
   bool _intentionalDisconnect = false;
   bool _disposed = false;
 
@@ -134,6 +138,7 @@ class RemoteSessionService {
 
       if (session.isApproved || session.isActive) {
         _statusPollTimer?.cancel();
+        _relayToken = session.relayToken;
         debugPrint(
             '[RemoteSession] Session approved/active — connecting via Realtime');
         _statusController.add('Approved! Connecting...');
@@ -232,6 +237,7 @@ class RemoteSessionService {
         payload: {
           'type': 'input',
           ...input,
+          if (_relayToken != null) 'relay_token': _relayToken,
         },
       );
     } catch (e) {
@@ -247,6 +253,7 @@ class RemoteSessionService {
         payload: {
           'type': 'camera_control',
           'action': action,
+          if (_relayToken != null) 'relay_token': _relayToken,
         },
       );
       _cameraActive = action == 'start';
@@ -264,6 +271,7 @@ class RemoteSessionService {
         payload: {
           'type': 'pc_control',
           'action': action,
+          if (_relayToken != null) 'relay_token': _relayToken,
         },
       );
     } catch (e) {
@@ -319,6 +327,7 @@ class RemoteSessionService {
       _channel = null;
     }
     _currentSessionId = null;
+    _relayToken = null;
     _sessionController.add(null);
   }
 

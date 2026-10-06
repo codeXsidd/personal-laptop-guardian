@@ -24,6 +24,7 @@ public sealed class RemoteAccessService : IDisposable
     private string? _supabaseUrl;
     private string? _supabaseAnonKey;
     private string? _currentSessionId;
+    private string? _relayToken;
     private RealtimeRelay? _relay;
     private CancellationTokenSource? _relayCts;
     private DateTime _sessionStartedAt;
@@ -239,6 +240,16 @@ public sealed class RemoteAccessService : IDisposable
 
             _currentSessionId = sessionId;
             _sessionStartedAt = DateTime.UtcNow;
+
+            // Extract relay_token from approve response for command authorization
+            try
+            {
+                var approveResult = await resp.Content.ReadFromJsonAsync<ApproveResponse>(JsonOpts);
+                _relayToken = approveResult?.Session?.RelayToken;
+                DebugLog($"Relay token present: {_relayToken != null}");
+            }
+            catch { }
+
             StatusChanged?.Invoke(this, "Session approved. Connecting via Realtime...");
 
             await ConnectRealtimeAsync(sessionId);
@@ -366,6 +377,16 @@ public sealed class RemoteAccessService : IDisposable
         {
             var msg = JsonSerializer.Deserialize<RelayMessage>(payloadJson, JsonOpts);
             if (msg == null) return;
+
+            // Validate relay_token for command messages to prevent unauthorized control
+            if (msg.Type is "input" or "pc_control" or "camera_control")
+            {
+                if (_relayToken != null && msg.RelayToken != _relayToken)
+                {
+                    DebugLog($"Rejected {msg.Type}: invalid relay token");
+                    return;
+                }
+            }
 
             if (msg.Type == "input")
             {
@@ -569,6 +590,7 @@ public sealed class RemoteAccessService : IDisposable
 
         var sessionId = _currentSessionId;
         _currentSessionId = null;
+        _relayToken = null;
 
         SessionEnded?.Invoke(this, reason);
         StatusChanged?.Invoke(this, "Session ended");
@@ -603,6 +625,17 @@ internal sealed class RelayMessage
     [JsonPropertyName("button")] public string? Button { get; set; }
     [JsonPropertyName("key")] public string? Key { get; set; }
     [JsonPropertyName("action")] public string? Action { get; set; }
+    [JsonPropertyName("relay_token")] public string? RelayToken { get; set; }
+}
+
+internal sealed class ApproveResponse
+{
+    [JsonPropertyName("session")] public ApproveSessionDto? Session { get; set; }
+}
+
+internal sealed class ApproveSessionDto
+{
+    [JsonPropertyName("relay_token")] public string? RelayToken { get; set; }
 }
 
 internal sealed class SessionsResponse
