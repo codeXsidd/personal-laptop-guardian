@@ -15,8 +15,6 @@ class Device {
   final DateTime? lastWakeAt;
   final DateTime? lastLockAt;
   final DateTime? lastUnlockAt;
-  final DateTime? lastLoginAt;
-  final DateTime? lastLogoutAt;
   final int heartbeatIntervalS;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -38,8 +36,6 @@ class Device {
     this.lastWakeAt,
     this.lastLockAt,
     this.lastUnlockAt,
-    this.lastLoginAt,
-    this.lastLogoutAt,
     this.heartbeatIntervalS = 60,
     required this.createdAt,
     required this.updatedAt,
@@ -76,12 +72,6 @@ class Device {
           : null,
       lastUnlockAt: json['last_unlock_at'] != null
           ? DateTime.parse(json['last_unlock_at'] as String)
-          : null,
-      lastLoginAt: json['last_login_at'] != null
-          ? DateTime.parse(json['last_login_at'] as String)
-          : null,
-      lastLogoutAt: json['last_logout_at'] != null
-          ? DateTime.parse(json['last_logout_at'] as String)
           : null,
       heartbeatIntervalS: json['heartbeat_interval_s'] as int? ?? 60,
       createdAt: DateTime.parse(json['created_at'] as String),

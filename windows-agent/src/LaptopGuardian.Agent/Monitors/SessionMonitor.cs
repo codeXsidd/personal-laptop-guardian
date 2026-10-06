@@ -42,7 +42,7 @@ public sealed class SessionMonitor : IEventMonitor
 
     public string MonitorName => "Session";
 
-    // Type 7 (Unlock) excluded — unlocks are tracked via SystemEvents.SessionSwitch
+    // Type 7 (Unlock) excluded — unlocks are tracked via SCM session change
     private static readonly HashSet<int> InteractiveLogonTypes = [2, 10, 11];
 
     public SessionMonitor(
@@ -85,22 +85,22 @@ public sealed class SessionMonitor : IEventMonitor
             _watcher.EventRecordWritten += OnSessionEvent;
             _watcher.Enabled = true;
 
-            _logger.LogInformation("SessionMonitor started — watching Security log + SessionSwitch");
+            _logger.LogInformation("SessionMonitor started — watching Security log + SCM session change");
         }
         catch (UnauthorizedAccessException)
         {
             _logger.LogWarning(
                 "SessionMonitor: Cannot access Security event log. " +
-                "Lock/unlock detection still works via SessionSwitch. " +
+                "Lock/unlock detection still works via SCM session change. " +
                 "Add the service account to 'Event Log Readers' for login/logout monitoring");
         }
         catch (EventLogNotFoundException)
         {
-            _logger.LogWarning("SessionMonitor: Security event log not found — using SessionSwitch only");
+            _logger.LogWarning("SessionMonitor: Security event log not found — using SCM session change only");
         }
         catch (EventLogException ex)
         {
-            _logger.LogWarning(ex, "SessionMonitor: Failed to start Security log watcher — using SessionSwitch only");
+            _logger.LogWarning(ex, "SessionMonitor: Failed to start Security log watcher — using SCM session change only");
         }
     }
 
@@ -297,13 +297,13 @@ public sealed class SessionMonitor : IEventMonitor
 
             lock (_recentEvents)
             {
-                // Also check against SessionSwitch events to prevent duplicate lock/unlock
+                // Also check against SCM session change events to prevent duplicate lock/unlock
                 var switchKey = $"switch:{eventType}";
                 if (_recentEvents.TryGetValue(switchKey, out var switchTime)
                     && (now - switchTime) < DeduplicationWindow)
                 {
                     _logger.LogDebug(
-                        "SessionMonitor: Skipping Security log {EventType} — already captured via SessionSwitch",
+                        "SessionMonitor: Skipping Security log {EventType} — already captured via SCM session change",
                         eventType);
                     return;
                 }
@@ -382,7 +382,7 @@ public sealed class SessionMonitor : IEventMonitor
                 });
             }
 
-            case 4800: // Workstation locked (supplementary — primary is SessionSwitch)
+            case 4800: // Workstation locked (supplementary — primary is SCM session change)
             {
                 if (properties.Count < 4)
                     return null;
@@ -399,7 +399,7 @@ public sealed class SessionMonitor : IEventMonitor
                 });
             }
 
-            case 4801: // Workstation unlocked (supplementary — primary is SessionSwitch)
+            case 4801: // Workstation unlocked (supplementary — primary is SCM session change)
             {
                 if (properties.Count < 4)
                     return null;
